@@ -1,0 +1,32 @@
+[
+  {
+    "path": "android/toolchain/r8-8.3.37.jar",
+    "url": "https://dl.google.com/dl/android/maven2/com/android/tools/r8/8.3.37/r8-8.3.37.jar",
+    "sha": "59753e70a74f918389cc87f1b7d66b5c0862932559167425708ded159e3de439"
+  },
+  {
+    "path": "android/assets/yamnet.tflite",
+    "url": "https://storage.googleapis.com/download.tensorflow.org/models/tflite/task_library/audio_classification/android/lite-model_yamnet_classification_tflite_1.tflite",
+    "sha": "10c95ea3eb9a7bb4cb8bddf6feb023250381008177ac162ce169694d05c317de"
+  },
+  {
+    "path": "android/assets/yamnet_class_map.csv",
+    "url": "https://raw.githubusercontent.com/tensorflow/models/master/research/audioset/yamnet/yamnet_class_map.csv",
+    "sha": "cdf24d193e196d9e95912a2667051ae203e92a2ba09449218ccb40ef787c6df2"
+  },
+  {
+    "path": "android/assets/TENSORFLOW-LICENSE.txt",
+    "url": "https://raw.githubusercontent.com/tensorflow/tensorflow/v2.14.0/LICENSE",
+    "sha": "71c6915d04265772a0339bed47276942c678b45cc01534210ebe6984fd1aec65"
+  },
+  {
+    "path": "android/toolchain/tensorflow-lite-2.14.0.aar",
+    "url": "https://repo.maven.apache.org/maven2/org/tensorflow/tensorflow-lite/2.14.0/tensorflow-lite-2.14.0.aar",
+    "sha": "709db81fbfba461b1ed27e9c1e83817c2d7cc60469074eaa36c88fb8dbea4886"
+  },
+  {
+    "path": "android/toolchain/tensorflow-lite-api-2.14.0.aar",
+    "url": "https://repo.maven.apache.org/maven2/org/tensorflow/tensorflow-lite-api/2.14.0/tensorflow-lite-api-2.14.0.aar",
+    "sha": "1d1ffffe9d15969882c856249a3018ccd2199319e195a63b7b58699fc8cb836f"
+  }
+]

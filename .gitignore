@@ -10,3 +10,13 @@ CLAUDE.local.md
 # carnet de travail interne, en francais et decrivant des bugs non corriges :
 # il vit sur le disque, rien n'en sort
 tasks/
+.offline-store/
+dist-n5d/
+android/build/
+android/dist/
+android/toolchain/
+n5d-reports/
+
+*.download
+*.jks
+*.keystore

@@ -1,111 +1,39 @@
-# bloub
+# Bloub 桌边 · N5D
 
-An SVG recreation of the x.ai bot avatar: **one filled black shape** that morphs
-between 14 states, **two white shapes** for the eyes that morph independently, on
-a plain background. No animation library.
+一个在 N5D 上独立运行的桌边小伙伴。基于 [Jérémy Perret 的 Bloub](https://github.com/jeremy-prt/bloub)，按屏幕、挖孔和实体灯环的实测尺寸重新编排动作。
 
-![The avatar going through idle, wink, orbit and burst](docs/demo.gif)
+[下载 APK](https://github.com/Cyber-Yichen/Bloub-N5D/releases/latest) · [使用与构建](N5D-README.md) · [动画设计](N5D-DESIGN.md) · [上游说明](docs/UPSTREAM-README.md)
 
-## Running it
+![陪伴设置](docs/n5d-assets/companion.png)
+
+## 它会做什么
+
+- 一轮六分钟，持续循环：随机八种形状、眨眼、钻洞、洞口小伙伴、吞泡泡长大、彗星、光波、打盹。
+- 飞向屏幕右侧的实体灯环，化成一段**黑色影子**，匀速转两圈，再沿切线飞回屏幕。影子经过的位置同时熄灭 RGB 和白灯。
+- 白底黑色、深海薄荷、暖沙棕色、黑底银白和自动换色；切换时柔和过渡。
+- 可选音乐耳朵、短时相机观察、ToF 靠近反应。音频和画面只在本机内存处理，不保存、不上传。
+- 长按打开“陪伴 / 感知 / 关于”；关于中可打开本项目 GitHub。
+
+![灯环黑色缺口的几何预览](docs/n5d-assets/ring-preview.png)
+
+## 灯环协作
+
+需安装 [N5D RingStudio](https://github.com/Cyber-Yichen/N5D-RingStudio)，并在其“关于”启用其他应用控制。仅在互动时申请公共 API 会话；互动结束、打开设置、切后台或关闭灯光后归还，恢复工坊原灯效和设置。没有服务时保持屏幕内的替代动画。
+
+## 快速开始
+
+下载最新 Release 的 APK，安装并打开 **Bloub 桌边**。轻触打招呼；长按 650 ms 或 Android 返回键打开设置。
 
 ```bash
-pnpm install
-pnpm dev
+pnpm install --frozen-lockfile
+pnpm dev:n5d
+pnpm test
 ```
 
-Then open http://localhost:5190.
+Android 构建步骤见 [N5D-README.md](N5D-README.md)。网页开发预览没有硬件权限，感知和灯光需在 N5D 运行 APK。
 
-```bash
-pnpm test     # vitest
-pnpm build    # vue-tsc --noEmit && vite build
-```
+## 许可与来源
 
-Vue 3, Vite, TypeScript, Tailwind 4. No ESLint and no Prettier: `vue-tsc` is the
-only gate, so run `pnpm build` before you call something done.
+本项目及上游 Bloub 使用 [MIT](LICENSE)，保留 Jérémy Perret 的版权声明。新增 N5D 适配由 Cyber-Yichen 维护。音频模型及 TensorFlow Lite 使用 Apache 2.0，许可随 APK 一起分发。灯环通过独立项目的公共接口控制。
 
-## What's in it
-
-The rail on the left switches between three views. **Customise** offers 8 body
-shapes, 12 colours and 16 rest expressions, kept between visits. **Animations** is
-a small editor: arrange states into a timeline, set how long each is held, save the
-result. **Settings** holds the language (French, English or Chinese) and the
-credits.
-
-Anything on screen can be exported: the avatar as SVG, PNG or an animated GIF, and
-a whole timeline as GIF or MP4. The still formats need no library at all, and the
-video encoder is only fetched the first time you ask for one.
-
-Two URLs are worth knowing:
-
-- `#planche`: the 14 states side by side, frozen. Quick visual check.
-- `#etat=orbit&stop`: opens one state directly, playback paused.
-
-![The 14 states, frozen side by side](docs/states.png)
-
-## Why the numbers look arbitrary
-
-They're measured, not chosen. The reference video was cut at 10 fps and each
-state measured off the frames: silhouettes by sub-pixel ray casting, eyes by
-capsule fitting, colours and stroke widths by direct sampling.
-
-So the constants in the code are **measurements**, and rounding them to friendlier
-values breaks the resemblance, which is the only thing this project is trying to
-get right. A few are counter-intuitive enough to be worth knowing before you
-correct anything:
-
-| What you'd assume | What the video shows |
-|---|---|
-| The eyes lean `//` | They lean `\\`, around 26° off vertical |
-| The body is a squircle | It's a perfect circle, radial deviation under 0.7% |
-| Transitions are springs | Exponential ease-outs; the body never overshoots |
-| The comet crosses the screen | The dot stays put, the trail orbits it |
-| The avatar floats at rest | It doesn't. The life is gaze drift and blinking |
-
-[docs/measurements.md](docs/measurements.md) has the rest, including how to
-regenerate the extracted profiles.
-
-## How it's put together
-
-`src/bot/` is framework-free and clock-free: `engine.sample(t)` is a pure
-function of time. Pausing, resuming, jumping to an arbitrary date and running
-tests all produce the same image, which is what makes the frozen state board and
-the DOM-less test suite possible.
-
-| | |
-|---|---|
-| [docs/architecture.md](docs/architecture.md) | The engine, radial-profile morphing, eyes as mask holes |
-| [docs/measurements.md](docs/measurements.md) | What was measured, and regenerating `profiles.ts` |
-| [docs/intro.md](docs/intro.md) | The arrival sequence, and why it only plays one state |
-| [docs/interface.md](docs/interface.md) | Layout, the three-column scene, CSS traps |
-| [docs/export.md](docs/export.md) | Exporting to SVG, PNG, GIF and MP4 |
-| [docs/i18n.md](docs/i18n.md) | The hand-rolled translation layer |
-
-## Using the component
-
-```vue
-<BloubBot v-model:block="block" v-model:state="state" v-model:playing="playing" />
-<BloubBot state="orbit" :size="120" :frozen-at="1.2" />
-```
-
-`block` is the playback cursor: a montage can play the same state twice, so the
-index is what identifies where you are; `state` follows it as an output. Pass
-`frozenAt` and the component renders one exact frame with no animation loop, which
-is how the thumbnails and the state board are drawn.
-
-Props: `size`, `shape`, `color`, `expression`, `paper`, `frozenAt`, `cycle`,
-`follow`, `gaze`. Models: `block`, `state`, `playing`, `elapsed`. See
-[BloubBot.vue](src/components/BloubBot.vue) for the details.
-
-## Changes
-
-[CHANGELOG.md](CHANGELOG.md), one entry per release — which is how you tell whether the
-copy you have carries a given fix.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
-
-Not affiliated with, endorsed by or connected to x.ai. It recreates the visual
-behaviour of their bot avatar as an exercise; "Grok" and "x.ai" belong to their
-owners. The MIT licence covers the code in this repository, not the design it
-imitates.
+本项目与 xAI、Grok 无隶属关系。动画核心来源与原始参考说明见上游文档。

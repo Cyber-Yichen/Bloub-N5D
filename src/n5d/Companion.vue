@@ -1,0 +1,155 @@
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import Avatar from './Avatar.vue'
+import SettingsDock from './SettingsDock.vue'
+import { PROJECT } from './project'
+import Atmosphere from './Atmosphere.vue'
+import { sampleLights } from './lighting'
+import { reactScene,emptySensors,type SensorData } from './reactions'
+import { GEOMETRY, sampleScene, externalPose, smooth, type Scene, type CompanionState } from './scene'
+import { paletteAt, blendPalette, type ThemeId, type Palette } from './themes'
+
+interface NativeBridge { frame(json: string): void; sensors(mic:boolean,camera:boolean,tof:boolean):void; enableLights(on: boolean): void; brightness(value: number): void; ready(): void; openRingStudio(): void; openProject():void }
+declare global { interface Window {
+  N5D?: NativeBridge;
+  n5dStatus?: (code:string) => void;
+  n5dSensors?:(data:SensorData)=>void;
+  companion?: { setState(state:CompanionState,duration?:number):void; reset():void };
+  n5dDebug?: { seek(t:number):void; resume():void; snapshot():unknown };
+} }
+const load = (key:string,fallback:string) => { try{return localStorage.getItem(key)??fallback}catch{return fallback} }
+const save = (key:string,value:string) => { try{localStorage.setItem(key,value)}catch{/* Private browser preview. */} }
+const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+const native = window.N5D
+const ringOnline=ref(false),ringBlend=ref(0)
+const calm = ref(load('n5d.calm',String(reduced))==='true')
+const lights = ref(load('n5d.lights','true')==='true')
+const mic=ref(load('n5d.mic','false')==='true'),camera=ref(load('n5d.camera','false')==='true'),tof=ref(load('n5d.tof','false')==='true')
+const sensorData=ref<SensorData>({...emptySensors}),musicStrength=ref(0),nearStrength=ref(0)
+let sensorAt=-10000,lastHello=-10000
+function configureSensors(){for(const [key,value] of [['mic',mic.value],['camera',camera.value],['tof',tof.value]] as const)save('n5d.'+key,String(value));window.N5D?.sensors(mic.value,camera.value,tof.value)}
+function toggleSensor(kind:'mic'|'camera'|'tof'){const option={mic,camera,tof}[kind];option.value=!option.value;configureSensors()}
+
+const savedTheme=load('n5d.theme','paper')
+const theme=ref<ThemeId>(['paper','lagoon','sand','night','auto'].includes(savedTheme)?savedTheme as ThemeId:'paper')
+const themeChange=ref<{at:number;from:Palette}|null>(null)
+const brightness = ref(Number(load('n5d.brightness','42')))
+const panel = ref(false), hint = ref(true), status = ref(window.N5D ? '正在连接灯环' : '浏览器预览 · 灯光在 N5D 上运行')
+const seed=Math.floor(Math.random()*0x7fffffff)
+const clock = ref(0), zoom = ref(1), interactionUntil = ref(-1), userState = ref<CompanionState|null>(null)
+const palette=computed(()=>{
+  const target=paletteAt(theme.value,clock.value),transition=themeChange.value
+  return transition?blendPalette(transition.from,target,smooth((clock.value-transition.at)/3)):target
+})
+let userUntil=0, raf=0, previous=0, rendered=0, lastLight=0, paused=false, hold=0, hintTimer=0, downX=0, downY=0, longPressed=false
+const modeChange=ref<{at:number;from:Scene}|null>(null)
+const story=computed(()=>{
+  const target=sampleScene(clock.value,calm.value,seed), transition=modeChange.value
+  if(!transition)return target
+  const u=smooth((clock.value-transition.at)/3)
+  for(const key of ['x','y','scale','portal','sleep','yaw','pitch','rotation','squash','trail','buddy','growth'] as const)target[key]=transition.from[key]+(target[key]-transition.from[key])*u
+  return target
+})
+const scene=computed(()=>reactScene(story.value,clock.value,musicStrength.value,nearStrength.value,sensorData.value,calm.value))
+const musicShown=computed(()=>!calm.value&&!story.value.lightActive&&story.value.portal<.05&&story.value.sleep<.5&&story.value.x>500&&story.value.x<1250?musicStrength.value:0)
+const pose=computed(()=>userState.value ? externalPose(userState.value) : clock.value<interactionUntil.value ? {state:'wink' as const,expression:'heureux' as const} : scene.value)
+const portalOpacity=computed(()=>.2+.7*scene.value.portal)
+// Without a working light session the excursion stays visible near the right edge.
+const displayPosition=computed(()=>{
+  const s=scene.value
+  if(s.x<=1230)return {x:s.x,y:s.y}
+  const u=smooth((s.x-1230)/400)
+  const x=1230+(s.x-1230)/(1+((s.x-1230)/160)**3)**(1/3),y=360+(s.y-360)*(1-.6*u)
+  return {x:x+(s.x-x)*ringBlend.value,y:y+(s.y-y)*ringBlend.value}
+})
+const bodyStyle=computed(()=>({transform:`translate(${displayPosition.value.x}px,${displayPosition.value.y}px) rotate(${scene.value.rotation}deg) scale(${scene.value.scale*scene.value.squash},${scene.value.scale/scene.value.squash})`}))
+
+const resize=()=>{zoom.value=Math.min(innerWidth/GEOMETRY.width,innerHeight/GEOMETRY.height)}
+function toggleCalm(){modeChange.value={at:clock.value,from:{...scene.value}};calm.value=!calm.value;save('n5d.calm',String(calm.value))}
+function toggleLights(){lights.value=!lights.value;save('n5d.lights',String(lights.value));window.N5D?.enableLights(lights.value)}
+function changeBrightness(value:number){brightness.value=value;setBrightness()}
+function openProject(){if(native)native.openProject();else window.open(PROJECT.github,'_blank','noopener,noreferrer')}
+function setBrightness(){save('n5d.brightness',String(brightness.value));window.N5D?.brightness(brightness.value/100)}
+function setTheme(id:ThemeId){themeChange.value={at:clock.value,from:{...palette.value}};theme.value=id;save('n5d.theme',id)}
+function pointerDown(e:PointerEvent){
+  if(panel.value)return
+  downX=e.clientX;downY=e.clientY;longPressed=false
+  hold=window.setTimeout(()=>{longPressed=true;panel.value=true;hint.value=false},650)
+}
+function pointerMove(e:PointerEvent){if(Math.hypot(e.clientX-downX,e.clientY-downY)>20)clearTimeout(hold)}
+function cancelHold(){clearTimeout(hold)}
+function pointerUp(){clearTimeout(hold);if(!longPressed&&!panel.value)interactionUntil.value=clock.value+2.2}
+function key(e:KeyboardEvent){if(e.key==='Escape'){panel.value=!panel.value}else if(e.key===' '){e.preventDefault();interactionUntil.value=clock.value+2.2}}
+function tick(ms:number){
+  raf=requestAnimationFrame(tick)
+  if(document.hidden){previous=ms;return}
+  // 30 fps drawing is ample for a quiet desk companion; no catch-up after suspension.
+  if(ms-rendered<1000/30-1)return
+  const dt=previous?Math.min((ms-previous)/1000,.1):0
+  previous=ms;rendered=ms
+  if(!paused&&!panel.value)clock.value+=dt
+  ringBlend.value+=((ringOnline.value&&lights.value?1:0)-ringBlend.value)*(1-Math.exp(-dt/.8))
+  const fresh=ms-sensorAt<2200,data=sensorData.value
+  const musicTarget=fresh&&mic.value?Math.max(0,Math.min(1,(data.music-.14)/.42)):0
+  const nearTarget=fresh&&tof.value&&data.distance>=0?Math.max(0,Math.min(1,(300-data.distance)/230)):0
+  musicStrength.value+=(musicTarget-musicStrength.value)*(1-Math.exp(-dt/(musicTarget>musicStrength.value?1.2:3)))
+  nearStrength.value+=(nearTarget-nearStrength.value)*(1-Math.exp(-dt/.9))
+  if(!calm.value&&nearStrength.value>.65&&clock.value-lastHello>18&&story.value.x<1300&&story.value.x>500&&!story.value.lightActive){interactionUntil.value=clock.value+2.2;lastHello=clock.value}
+
+  if(userState.value&&clock.value>=userUntil)userState.value=null
+  if(ms-lastLight>=100){
+    lastLight=ms
+    const s=scene.value
+    if(lights.value)window.N5D?.frame(JSON.stringify(sampleLights(panel.value?{...s,lightActive:false,lightMix:0}:s,palette.value)))
+  }
+}
+const codes:Record<string,string>={CONNECTED:'剧情灯光互动中 · 结束后自动归还',IDLE:'灯光自由播放 · 仅在灯环互动时临时接管',DISABLED:'请在灯环工坊「关于」开启其他应用控制',UNAVAILABLE:'未找到灯环工坊 1.1',BUSY:'灯环正在由其他应用控制',OFF:'灯光互动已关闭 · 已归还灯环',DISCONNECTED:'灯环连接已断开',NOT_OWNER:'灯环控制已归还；下次剧情再尝试',DRIVER_ERROR:'灯光驱动异常，请在灯环工坊检查',UNSUPPORTED_VERSION:'灯环接口或设备映射不兼容'}
+onMounted(()=>{
+  resize();window.addEventListener('resize',resize);window.addEventListener('keydown',key)
+  window.n5dSensors=(data)=>{sensorData.value=data;sensorAt=performance.now()}
+  window.n5dStatus=(code)=>{ringOnline.value=code==='CONNECTED';status.value=codes[code]??`灯环状态：${code}`}
+  window.companion={setState(state,duration=8){
+    if(!['idle','thinking','success','attention','sleep'].includes(state))return
+    userState.value=state;userUntil=clock.value+Math.max(.8,Math.min(120,Number.isFinite(duration)?duration:8))
+  },reset(){userState.value=null}}
+  // Explicit diagnostic URL only; the normal appliance has no seek or speed control.
+  if(new URLSearchParams(location.search).has('debug'))window.n5dDebug={seek(t){if(Number.isFinite(t)){clock.value=Math.max(0,t);paused=true}},resume(){paused=false;previous=0},snapshot(){return {clock:clock.value,...scene.value,lights:lights.value,status:status.value,sensors:{...sensorData.value},musicStrength:musicStrength.value,nearStrength:nearStrength.value}}}
+  window.N5D?.ready();window.N5D?.brightness(brightness.value/100);window.N5D?.enableLights(lights.value);configureSensors()
+  raf=requestAnimationFrame(tick);hintTimer=window.setTimeout(()=>hint.value=false,7000)
+})
+onBeforeUnmount(()=>{cancelAnimationFrame(raf);clearTimeout(hold);clearTimeout(hintTimer);window.removeEventListener('resize',resize);window.removeEventListener('keydown',key);delete window.companion;delete window.n5dDebug;delete window.n5dStatus;delete window.n5dSensors})
+</script>
+
+<template>
+  <main @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="cancelHold" :style="{background:palette.paper}">
+    <div class="stage" :style="{transform:`translate(-50%,-50%) scale(${zoom})`,background:palette.paper}">
+      <Atmosphere :scene="scene" :palette="palette" :music="musicShown" :bubbles-enabled="!calm"/>
+      <div class="companion-position" :style="bodyStyle">
+        <Avatar :time="clock" :local="scene.local" :shape="scene.shape" :state="pose.state" :expression="pose.expression" :yaw="scene.yaw" :pitch="scene.pitch" :palette="palette"/>
+      </div>
+      <svg class="aperture" viewBox="0 0 1600 720" aria-hidden="true">
+        <g :opacity="portalOpacity" fill="none" :stroke="palette.rim">
+          <circle cx="44" cy="360" :r="31+scene.portal*2" stroke-width="1.5"/>
+          <circle cx="44" cy="360" :r="38+scene.breath*8" :opacity="scene.portal*.26" stroke-width="1"/>
+          <path d="M 44 315 A 45 45 0 0 1 44 405" :stroke="palette.amber" :opacity="scene.portal*.6" stroke-width="2" stroke-linecap="round"/>
+        </g>
+        <!-- A measured, fixed physical occluder. The character actually passes behind it. -->
+        <circle cx="44" cy="360" :r="25+scene.buddy*58" fill="#000"/>
+        <clipPath id="buddy-clip"><circle cx="44" cy="360" :r="25+scene.buddy*58"/></clipPath>
+        <g clip-path="url(#buddy-clip)" :opacity="scene.buddy" fill="#fff">
+          <ellipse cx="83" :cy="354+scene.breath*2" rx="5.5" :ry="12-scene.breath*4"/>
+          <ellipse cx="105" :cy="354+scene.breath*2" rx="5.5" :ry="12-scene.breath*4"/>
+        </g>
+        <circle cx="44" cy="360" r="25" fill="#000"/>
+      </svg>
+      <Transition name="fade"><p v-if="sensorData.cameraOn" class="camera-observation" :style="{color:palette.quiet}">◉ 相机观察中</p></Transition>
+      <Transition name="fade"><p v-if="hint&&!panel" class="hint" :style="{color:palette.quiet}">轻触打个招呼 · 长按打开设置</p></Transition>
+      <Transition name="panel">
+        <SettingsDock v-if="panel" :calm="calm" :lights="lights" :brightness="brightness" :theme="theme"
+          :mic="mic" :camera="camera" :tof="tof" :sensors="sensorData" :status="status" :native="!!native"
+          @close="panel=false" @calm="toggleCalm" @lights="toggleLights" @brightness="changeBrightness"
+          @theme="setTheme" @sensor="toggleSensor" @ring="native?.openRingStudio()" @project="openProject"/>
+      </Transition>
+    </div>
+  </main>
+</template>
