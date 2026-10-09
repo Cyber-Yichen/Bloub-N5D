@@ -4,7 +4,7 @@ An SVG recreation of the x.ai bot avatar: **one filled black shape** that morphs
 between 14 states, **two white shapes** for the eyes that morph independently, on
 a plain background. No animation library.
 
-![The avatar going through idle, wink, orbit and burst](docs/demo.gif)
+![The avatar going through idle, wink, orbit and burst](demo.gif)
 
 ## Running it
 
@@ -40,7 +40,7 @@ Two URLs are worth knowing:
 - `#planche`: the 14 states side by side, frozen. Quick visual check.
 - `#etat=orbit&stop`: opens one state directly, playback paused.
 
-![The 14 states, frozen side by side](docs/states.png)
+![The 14 states, frozen side by side](states.png)
 
 ## Why the numbers look arbitrary
 
@@ -61,7 +61,7 @@ correct anything:
 | The comet crosses the screen | The dot stays put, the trail orbits it |
 | The avatar floats at rest | It doesn't. The life is gaze drift and blinking |
 
-[docs/measurements.md](docs/measurements.md) has the rest, including how to
+[docs/measurements.md](measurements.md) has the rest, including how to
 regenerate the extracted profiles.
 
 ## How it's put together
@@ -73,12 +73,12 @@ the DOM-less test suite possible.
 
 | | |
 |---|---|
-| [docs/architecture.md](docs/architecture.md) | The engine, radial-profile morphing, eyes as mask holes |
-| [docs/measurements.md](docs/measurements.md) | What was measured, and regenerating `profiles.ts` |
-| [docs/intro.md](docs/intro.md) | The arrival sequence, and why it only plays one state |
-| [docs/interface.md](docs/interface.md) | Layout, the three-column scene, CSS traps |
-| [docs/export.md](docs/export.md) | Exporting to SVG, PNG, GIF and MP4 |
-| [docs/i18n.md](docs/i18n.md) | The hand-rolled translation layer |
+| [docs/architecture.md](architecture.md) | The engine, radial-profile morphing, eyes as mask holes |
+| [docs/measurements.md](measurements.md) | What was measured, and regenerating `profiles.ts` |
+| [docs/intro.md](intro.md) | The arrival sequence, and why it only plays one state |
+| [docs/interface.md](interface.md) | Layout, the three-column scene, CSS traps |
+| [docs/export.md](export.md) | Exporting to SVG, PNG, GIF and MP4 |
+| [docs/i18n.md](i18n.md) | The hand-rolled translation layer |
 
 ## Using the component
 
@@ -94,16 +94,16 @@ is how the thumbnails and the state board are drawn.
 
 Props: `size`, `shape`, `color`, `expression`, `paper`, `frozenAt`, `cycle`,
 `follow`, `gaze`. Models: `block`, `state`, `playing`, `elapsed`. See
-[BloubBot.vue](src/components/BloubBot.vue) for the details.
+[BloubBot.vue](../src/components/BloubBot.vue) for the details.
 
 ## Changes
 
-[CHANGELOG.md](CHANGELOG.md), one entry per release — which is how you tell whether the
+[CHANGELOG.md](../CHANGELOG.md), one entry per release — which is how you tell whether the
 copy you have carries a given fix.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](../LICENSE).
 
 Not affiliated with, endorsed by or connected to x.ai. It recreates the visual
 behaviour of their bot avatar as an exercise; "Grok" and "x.ai" belong to their
