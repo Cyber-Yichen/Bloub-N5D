@@ -36,10 +36,11 @@ const themeChange=ref<{at:number;from:Palette}|null>(null)
 const brightness = ref(Number(load('n5d.brightness','42')))
 const panel = ref(false), hint = ref(true), status = ref(window.N5D ? '正在连接灯环' : '浏览器预览 · 灯光在 N5D 上运行')
 const seed=Math.floor(Math.random()*0x7fffffff)
+const paletteClock=ref(0)
 const clock = ref(0), zoom = ref(1), interactionUntil = ref(-1), userState = ref<CompanionState|null>(null)
 const palette=computed(()=>{
-  const target=paletteAt(theme.value,clock.value),transition=themeChange.value
-  return transition?blendPalette(transition.from,target,smooth((clock.value-transition.at)/3)):target
+  const target=paletteAt(theme.value,paletteClock.value),transition=themeChange.value
+  return transition?blendPalette(transition.from,target,smooth((paletteClock.value-transition.at)/3)):target
 })
 let userUntil=0, raf=0, previous=0, rendered=0, lastLight=0, paused=false, hold=0, hintTimer=0, downX=0, downY=0, longPressed=false
 const modeChange=ref<{at:number;from:Scene}|null>(null)
@@ -70,7 +71,7 @@ function toggleLights(){lights.value=!lights.value;save('n5d.lights',String(ligh
 function changeBrightness(value:number){brightness.value=value;setBrightness()}
 function openProject(){if(native)native.openProject();else window.open(PROJECT.github,'_blank','noopener,noreferrer')}
 function setBrightness(){save('n5d.brightness',String(brightness.value));window.N5D?.brightness(brightness.value/100)}
-function setTheme(id:ThemeId){themeChange.value={at:clock.value,from:{...palette.value}};theme.value=id;save('n5d.theme',id)}
+function setTheme(id:ThemeId){themeChange.value={at:paletteClock.value,from:{...palette.value}};theme.value=id;save('n5d.theme',id)}
 function pointerDown(e:PointerEvent){
   if(panel.value)return
   downX=e.clientX;downY=e.clientY;longPressed=false
@@ -79,7 +80,7 @@ function pointerDown(e:PointerEvent){
 function pointerMove(e:PointerEvent){if(Math.hypot(e.clientX-downX,e.clientY-downY)>20)clearTimeout(hold)}
 function cancelHold(){clearTimeout(hold)}
 function pointerUp(){clearTimeout(hold);if(!longPressed&&!panel.value)interactionUntil.value=clock.value+2.2}
-function key(e:KeyboardEvent){if(e.key==='Escape'){panel.value=!panel.value}else if(e.key===' '){e.preventDefault();interactionUntil.value=clock.value+2.2}}
+function key(e:KeyboardEvent){if(e.key==='Escape'){panel.value=!panel.value}else if(e.key===' '&&!panel.value){e.preventDefault();interactionUntil.value=clock.value+2.2}}
 function tick(ms:number){
   raf=requestAnimationFrame(tick)
   if(document.hidden){previous=ms;return}
@@ -87,6 +88,7 @@ function tick(ms:number){
   if(ms-rendered<1000/30-1)return
   const dt=previous?Math.min((ms-previous)/1000,.1):0
   previous=ms;rendered=ms
+  paletteClock.value+=dt
   if(!paused&&!panel.value)clock.value+=dt
   ringBlend.value+=((ringOnline.value&&lights.value?1:0)-ringBlend.value)*(1-Math.exp(-dt/.8))
   const fresh=ms-sensorAt<2200,data=sensorData.value
