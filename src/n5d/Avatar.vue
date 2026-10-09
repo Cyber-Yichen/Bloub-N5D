@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, shallowRef, triggerRef, watch } from 'vue'
+import { computed, ref, shallowRef, triggerRef, watch } from 'vue'
 import { BotEngine, type BotFrame } from '../bot/engine'
 import { EXPRESSION_BY_ID, type ExpressionId } from '../bot/expressions'
 import { STATE_BY_ID, type StateId } from '../bot/states'
@@ -8,6 +8,21 @@ import { mixHex } from '../bot/skins'
 import { luminance, type Palette } from './themes'
 
 const props = defineProps<{ time: number; local:number; shape:ShapeId; state: StateId; expression: ExpressionId; yaw: number; pitch: number; palette:Palette }>()
+const silhouette=ref<SVGPathElement|null>(null)
+let hitCanvas:CanvasRenderingContext2D|null=null
+function hitTest(clientX:number,clientY:number){
+  const path=silhouette.value,matrix=path?.getScreenCTM(),svg=path?.ownerSVGElement
+  if(!path||!matrix||!svg||frame.value.bodyAlpha<.2)return false
+  try{
+    const point=svg.createSVGPoint();point.x=clientX;point.y=clientY
+    const local=point.matrixTransform(matrix.inverse())
+    if(typeof path.isPointInFill==='function')return path.isPointInFill(local)
+    // Older device WebViews have Path2D but not SVGGeometryElement.isPointInFill.
+    hitCanvas??=document.createElement('canvas').getContext('2d')
+    return hitCanvas?.isPointInPath(new Path2D(frame.value.bodyPath),local.x,local.y)??false
+  }catch{return false}
+}
+defineExpose({hitTest})
 const R = 100
 const engine = new BotEngine(R,'idle',null,EXPRESSION_BY_ID.get('neutre')!)
 const frame = shallowRef<BotFrame>(engine.sample(0))
@@ -51,7 +66,7 @@ const contour=computed(()=>({color:luminance(props.palette.paper)>.5?'#26343b':'
       </template>
     </g>
     <g :opacity="frame.bodyAlpha">
-      <path :d="frame.bodyPath" :fill="props.palette.paper"/>
+      <path ref="silhouette" :d="frame.bodyPath" :fill="props.palette.paper"/>
       <path :d="frame.bodyPath" :fill="props.palette.body" mask="url(#body-mask)"/>
       <path v-if="contour.width>.01" :d="frame.bodyPath" fill="none" :stroke="contour.color" :stroke-width="contour.width"/>
     </g>

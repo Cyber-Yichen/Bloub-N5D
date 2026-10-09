@@ -69,7 +69,7 @@ const tab=ref<'companion'|'senses'|'about'>('companion')
         <button class="github-card" @click="emit('project')" aria-label="打开 Bloub-N5D GitHub 项目"><span><strong>GitHub 开源项目</strong><small>Cyber-Yichen / Bloub-N5D</small></span><b>↗</b></button>
         <p class="project-url">{{ PROJECT.github }}</p>
         <div class="credits"><div><span>动画核心</span><strong>Jérémy Perret / Bloub</strong><small>MIT · github.com/jeremy-prt/bloub</small></div><div><span>实体灯环</span><strong>N5D RingStudio</strong><small>公共控制接口 · 独立管理灯光</small></div><div><span>音乐感知</span><strong>YAMNet / TensorFlow Lite</strong><small>Apache 2.0 · 本机处理</small></div></div>
-        <p class="about-note">按 N5D 的屏幕、挖孔和灯环尺寸制作。轻触打招呼，长按打开设置。</p>
+        <p class="about-note">按 N5D 的屏幕、挖孔和灯环尺寸制作。点空白看过去，拖动目光跟随；轻触打招呼，长按设置。</p>
       </div>
       <footer class="panel-foot"><p role="status">{{ status }}</p><button v-if="native" class="link" @click="emit('ring')">灯环工坊 ↗</button><span v-else>1600 × 720</span></footer>
     </div>

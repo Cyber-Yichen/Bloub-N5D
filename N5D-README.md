@@ -1,4 +1,4 @@
-# Bloub 桌边 · 0.3.0 使用与构建
+# Bloub 桌边 · 0.4.0 使用与构建
 
 项目：[Cyber-Yichen/Bloub-N5D](https://github.com/Cyber-Yichen/Bloub-N5D)。上游基线 b4bb3c1b5f93c7b87a2e8d620f667c4093d97749，保留 MIT 许可。
 
@@ -11,6 +11,15 @@
 - **关于**：版本、许可、上游来源，以及本项目 GitHub 入口。交给系统浏览器打开；没有浏览器时复制链接。
 - 打开设置时暂停故事并归还灯环；收起后继续。前台保持亮屏，切后台暂停故事、停止感知并归还灯光。
 - 一轮六分钟持续循环，不需要电脑。未来本地状态接口目前为 window.companion.setState(state,duration)，支持 idle/thinking/success/attention/sleep；没有电脑端监听器。
+
+## 屏幕交互
+
+- 点空白处：Bloub 转头看向触点，触点出现淡涟漪。
+- 按住拖动：目光跟随手指；松手后停留约 3.2 s，再平滑回到剧情目光。
+- 轻触 Bloub：眨眼并轻轻弹一下；已有一次性变形会先完整播放。
+- 长按 650 ms 打开设置；取消手势、打开设置或离开屏幕后不会留下持续跟随。
+- 触点按实际缩放和留边换算到 1600 × 720 坐标；洞口和画布外的输入忽略。命中按当前实际 SVG 轮廓判断，不把整个透明头像框当成 Bot。
+- 跟随只控制目光，不改变灯环轨迹或申请额外灯光会话。
 
 ## 新的两圈动画
 
@@ -65,7 +74,7 @@ WSL 网络不可用时，可以在同一个 checkout 通过 Windows 下载，再
 powershell -ExecutionPolicy Bypass -File android/fetch-model.ps1
 ```
 
-每个依赖的来源、版本和 SHA256 固定在 android/dependencies.json 与 android/dependencies.sha256。构建前验证哈希；输出 android/dist/Bloub-N5D-0.3.0.apk 和 SHA256SUMS.txt。minSdk23、targetSdk27，打包 arm64-v8a TFLite。
+每个依赖的来源、版本和 SHA256 固定在 android/dependencies.json 与 android/dependencies.sha256。构建前验证哈希；输出 android/dist/Bloub-N5D-0.4.0.apk 和 SHA256SUMS.txt。minSdk23、targetSdk27，打包 arm64-v8a TFLite。
 
 开发签名密钥会在本机 android/toolchain/development.jks 自动生成，不提交。不同人的本地开发签名不同；发布包使用维护者的同一签名。产物、工具链、模型下载缓存、设备诊断报告均按 .gitignore 排除；模型与附带许可作为明确的运行资源保留。
 
@@ -85,6 +94,8 @@ ADB 可执行文件可通过 ADB 环境变量指定；多设备连接时指定 N
 
 ## 验证
 
-223 项测试通过，包含两个完整循环、八种形状、两圈匀速、飞行与圆周 C2 交接、双灯列黑色缺口、泡泡增长、动作最短时长、感知叠加范围。设备验证证据记录在本地忽略目录 n5d-reports，不把现场音频、图像或设备地址上传到项目。
+227 项测试通过，包含两个完整循环、八种形状、两圈匀速、飞行与圆周 C2 交接、双灯列黑色缺口、泡泡增长、动作最短时长、感知叠加范围。设备验证证据记录在本地忽略目录 n5d-reports，不把现场音频、图像或设备地址上传到项目。
 
 入环前 Bot 轮廓半径缩至约 70 px / 6.6 mm，匹配黑色缺口的核心尺寸；环上位置和大小由同一几何约束决定。
+
+开源引用与第三方许可见 [REFERENCES.md](REFERENCES.md)，项目边界见 [DISCLAIMER.md](DISCLAIMER.md)。
