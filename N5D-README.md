@@ -1,4 +1,4 @@
-# Bloub 桌边 · 0.6.0 使用与构建
+# Bloub 桌边 · 0.6.1 使用与构建
 
 项目：[Cyber-Yichen/Bloub-N5D](https://github.com/Cyber-Yichen/Bloub-N5D)。上游基线 b4bb3c1b5f93c7b87a2e8d620f667c4093d97749，保留 MIT 许可。
 
@@ -75,7 +75,7 @@ WSL 网络不可用时，可以在同一个 checkout 通过 Windows 下载，再
 powershell -ExecutionPolicy Bypass -File android/fetch-model.ps1
 ```
 
-每个依赖的来源、版本和 SHA256 固定在 android/dependencies.json 与 android/dependencies.sha256。构建前验证哈希；输出 android/dist/Bloub-N5D-0.6.0.apk 和 SHA256SUMS.txt。minSdk23、targetSdk27，打包 arm64-v8a TFLite。
+每个依赖的来源、版本和 SHA256 固定在 android/dependencies.json 与 android/dependencies.sha256。构建前验证哈希；输出 android/dist/Bloub-N5D-0.6.1.apk 和 SHA256SUMS.txt。minSdk23、targetSdk27，打包 arm64-v8a TFLite。
 
 开发签名密钥会在本机 android/toolchain/development.jks 自动生成，不提交。不同人的本地开发签名不同；发布包使用维护者的同一签名。产物、工具链、模型下载缓存、设备诊断报告均按 .gitignore 排除；模型与附带许可作为明确的运行资源保留。
 
@@ -119,7 +119,7 @@ ADB 可执行文件可通过 ADB 环境变量指定；多设备连接时指定 N
 node android/gallery-export.mjs --limit=12
 ```
 
-不提供 --limit 时导出所有未过期记录；ADB / N5D_SERIAL 的设置与 inspect.mjs 相同。导出位于 Git 忽略的 n5d-reports/gallery/<时间>/，含 JPEG 和 manifest.json。导出使用设备时钟筛选，不修改设备图库。电脑副本不会跟随设备自动删除，请自行管理；不要把办公室照片提交到公开仓库。
+不提供 --limit 时导出所有未过期记录；ADB / N5D_SERIAL 的设置与 inspect.mjs 相同。导出位于 Git 忽略的 n5d-reports/gallery/<时间>/，含原始 JPEG 和 manifest.json（rotationClockwise=90，分析时顺时针旋转 90°）。图库缩略图和大图统一按此方向显示为横向画面，已有照片也适用。导出使用设备时钟筛选，不修改设备图库。电脑副本不会跟随设备自动删除，请自行管理；不要把办公室照片提交到公开仓库。
 
 ## 随机与灵动 · 0.6
 

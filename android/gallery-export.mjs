@@ -27,7 +27,7 @@ for(const id of ids){
     const jpg=run('exec-out','run-as',app,'cat','files/observations/'+id+'.jpg')
     if(jpg[0]!==255||jpg[1]!==216)throw Error('Invalid JPEG')
     writeFileSync(path.join(output,id+'.jpg'),jpg)
-    items.push({...meta,file:id+'.jpg'})
+    items.push({...meta,rotationClockwise:meta.rotationClockwise??90,file:id+'.jpg'})
   }catch(e){console.warn('Skipped observation '+id+': '+e.message)}
 }
 writeFileSync(path.join(output,'manifest.json'),JSON.stringify({exportedAt:new Date().toISOString(),deviceTime:now,retentionDays:7,items},null,2))

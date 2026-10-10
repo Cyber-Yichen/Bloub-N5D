@@ -24,7 +24,7 @@ final class Gallery {
     File temp=new File(directory,id+".tmp"),photo=file(id,".jpg");
     try(FileOutputStream out=new FileOutputStream(temp)){if(!image.compress(Bitmap.CompressFormat.JPEG,82,out))throw new IOException("JPEG failed");}
     if(!temp.renameTo(photo)){temp.delete();throw new IOException("Save failed");}
-    JSONObject data=new JSONObject().put("id",id).put("capturedAt",now).put("faces",faces).put("motion",motion).put("width",image.getWidth()).put("height",image.getHeight());
+    JSONObject data=new JSONObject().put("id",id).put("capturedAt",now).put("faces",faces).put("motion",motion).put("rotationClockwise",90).put("width",image.getWidth()).put("height",image.getHeight());
     try(FileOutputStream out=new FileOutputStream(file(id,".json"))){out.write(data.toString().getBytes("UTF-8"));}
   }}
   String list(long before){synchronized(LOCK){
@@ -35,6 +35,7 @@ final class Gallery {
       String text=new String(readAll(f),"UTF-8");JSONObject d=new JSONObject(text);long at=d.getLong("capturedAt");
       if(before>0&&at>=before)continue;
       if(items.length()>=12){next=items.getJSONObject(items.length()-1).getLong("capturedAt");break;}
+      if(!d.has("rotationClockwise"))d.put("rotationClockwise",90);
       d.put("url","/observations/"+d.getString("id")+".jpg");items.put(d);
     }catch(Exception ignored){}}
     try{return new JSONObject().put("enabled",enabled()).put("retentionDays",7).put("total",all.size()).put("items",items).put("nextBefore",next).toString();}catch(JSONException e){return "{}";}

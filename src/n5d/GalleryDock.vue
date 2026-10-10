@@ -20,8 +20,8 @@ onBeforeUnmount(()=>clearInterval(timer))
     <div class="gallery-toolbar"><span>本机照片 · 保留 7 天 · {{ total }} 张</span><button :disabled="!native" :aria-pressed="enabled" @click="toggle">保存观察 <i class="switch" :class="{on:enabled}"/></button><button :disabled="!total" @click="clear">清空图库</button></div>
     <p v-if="error">{{ error }}</p>
     <div v-else-if="!photos.length" class="gallery-empty"><span>◌</span><strong>等它下次看看周围</strong><p>开启相机和“保存观察”，每次短时观察留一张照片。<br/>照片只保存在这台设备，不上传；到期自动清理。</p></div>
-    <div v-else class="gallery-grid"><button v-for="photo in photos" :key="photo.id" @click="selected=photo"><img :src="photo.url" :alt="'观察照片 '+date(photo.capturedAt)" loading="lazy"/><span>{{ date(photo.capturedAt) }}</span></button></div>
+    <div v-else class="gallery-grid"><button v-for="photo in photos" :key="photo.id" @click="selected=photo"><div class="gallery-thumbnail"><div class="photo-frame"><img :src="photo.url" :alt="'观察照片 '+date(photo.capturedAt)" loading="lazy"/></div></div><span>{{ date(photo.capturedAt) }}</span></button></div>
     <div v-if="next||history.length" class="gallery-pages"><button :disabled="!history.length" @click="page(false)">较新照片</button><button :disabled="!next" @click="page(true)">较早照片</button></div>
-    <div v-if="selected" class="photo-viewer" role="dialog" aria-label="观察照片"><img :src="selected.url" alt="相机观察照片"/><div><span>{{ date(selected.capturedAt) }} · 检测到 {{ selected.faces }} 张脸 · 7 天后删除</span><button @click="remove">删除这张</button><button @click="selected=null">返回图库</button></div></div>
+    <div v-if="selected" class="photo-viewer" role="dialog" aria-label="观察照片"><div class="photo-frame"><img :src="selected.url" alt="相机观察照片"/></div><div class="photo-details"><span>{{ date(selected.capturedAt) }} · 检测到 {{ selected.faces }} 张脸 · 7 天后删除</span><button @click="remove">删除这张</button><button @click="selected=null">返回图库</button></div></div>
   </div>
 </template>
