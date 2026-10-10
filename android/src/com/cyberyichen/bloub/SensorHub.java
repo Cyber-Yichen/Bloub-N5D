@@ -20,7 +20,7 @@ import org.json.*;
 /** Foreground-only local sensors; a stopped generation cannot publish or reopen. */
 final class SensorHub {
     interface Output {void accept(JSONObject data);}
-    private final Activity activity;private final Output output;private final TextureView texture;
+    private final SeatMonitor seat;private final Activity activity;private final Output output;private final TextureView texture;
     private final Handler ui=new Handler(Looper.getMainLooper());
     private final HandlerThread cameraThread=new HandlerThread("BloubCamera"),streamThread=new HandlerThread("BloubStream");private final Handler cameraHandler,streamHandler;
     private volatile boolean stopped;private final boolean micWanted,cameraWanted,tofWanted;
@@ -33,7 +33,7 @@ final class SensorHub {
     private volatile CameraDevice camera;private volatile CameraCaptureSession session;
     static final class StreamFrame {final byte[] jpeg;final long capturedAt,sequence;final double encodeMs;StreamFrame(byte[] bytes,long at,long sequence,double ms){jpeg=bytes;capturedAt=at;this.sequence=sequence;encodeMs=ms;}}
     private int savedGeneration=-1;private final Gallery gallery;private final String cameraId;private volatile ImageReader photoReader;
-    private long lastBitmap,cameraFrames;private volatile int cameraGeneration;private int[] previousPixels;private long lastCamera;
+    private long lastPhotoAt;private long lastBitmap,cameraFrames;private volatile int cameraGeneration;private int[] previousPixels;private long lastCamera;
     private final Runnable publish=new Runnable(){public void run(){
         if(stopped)return;
         long now=SystemClock.elapsedRealtime();
@@ -43,12 +43,12 @@ final class SensorHub {
             JSONObject d=new JSONObject();d.put("level",level);d.put("music",music);d.put("speech",speech);
             d.put("distance",distance);d.put("motion",motion);d.put("faces",faces);d.put("faceX",faceX);d.put("faceY",faceY);
             d.put("micStatus",micStatus);d.put("cameraStatus",cameraStatus);d.put("tofStatus",tofStatus);
-            d.put("cameraOn",cameraOn);d.put("cameraFrames",cameraFrames);output.accept(d);
+            d.put("seatState",seat.currentState());d.put("cameraOn",cameraOn);d.put("cameraFrames",cameraFrames);output.accept(d);
         }catch(JSONException ignored){}
         ui.postDelayed(this,150);
     }};
-    SensorHub(Activity activity,TextureView texture,boolean mic,boolean cam,boolean tof,Output output){
-        this.activity=activity;this.texture=texture;this.output=output;gallery=new Gallery(activity);cameraId=activity.getSharedPreferences("sensors",0).getString("camera_id","2");
+    SensorHub(Activity activity,TextureView texture,boolean mic,boolean cam,boolean tof,SeatMonitor seat,Output output){
+        this.seat=seat;this.activity=activity;this.texture=texture;this.output=output;gallery=new Gallery(activity);cameraId=activity.getSharedPreferences("sensors",0).getString("camera_id","2");
         quietStart=activity.getSharedPreferences("sensors",0).getInt("quiet_start",1380);quietEnd=activity.getSharedPreferences("sensors",0).getInt("quiet_end",480);
         micWanted=mic;cameraWanted=cam;tofWanted=tof;
         cameraThread.start();cameraHandler=new Handler(cameraThread.getLooper());streamThread.start();streamHandler=new Handler(streamThread.getLooper());
@@ -165,39 +165,40 @@ final class SensorHub {
         }catch(Exception e){Log.w("BloubSensors","Photo capture failed",e);}
     }
     private void savePreview(int generation,Size preview,boolean forced){
-        if(stopped||generation!=cameraGeneration||(!forced&&savedGeneration==generation)||!cameraOn||!gallery.enabled())return;
+        if(stopped||generation!=cameraGeneration||(!forced&&savedGeneration==generation)||!cameraOn||!gallery.enabled()||(!forced&&lastPhotoAt>0&&SystemClock.elapsedRealtime()-lastPhotoAt<120000))return;
         Bitmap frame=texture.getBitmap(preview.getWidth(),preview.getHeight());if(frame==null)return;
         cameraHandler.post(()->{try{
             if(stopped||generation!=cameraGeneration||(!forced&&savedGeneration==generation)||!gallery.enabled()||(!forced&&!live()&&!automaticAllowed()))return;
             java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
             if(!frame.compress(Bitmap.CompressFormat.JPEG,95,bytes))throw new IOException("Preview JPEG failed");
-            lastCaptureId=gallery.saveJpeg(bytes.toByteArray(),faces,motion,cameraId,"2".equals(cameraId)?90:0);savedGeneration=generation;pendingShot=false;
+            lastCaptureId=gallery.saveJpeg(bytes.toByteArray(),faces,motion,cameraId,"2".equals(cameraId)?90:0);savedGeneration=generation;pendingShot=false;lastPhotoAt=SystemClock.elapsedRealtime();
             Log.i("BloubSensors","PHOTO_PREVIEW_SAVED id="+cameraId+" size="+preview);
         }catch(Exception e){Log.w("BloubSensors","Preview photo save failed",e);}finally{frame.recycle();}});
     }
     void quietHours(int start,int end){quietStart=start;quietEnd=end;cameraHandler.post(()->{if(!cameraOn)cameraStatus=automaticAllowed()?"等待短时观察":"夜间休息 · 声音唤醒";});}
     private boolean automaticAllowed(){Calendar c=Calendar.getInstance();return CameraSchedule.allows(c.get(Calendar.HOUR_OF_DAY)*60+c.get(Calendar.MINUTE),quietStart,quietEnd,SystemClock.elapsedRealtime(),lastSoundAt,micWanted);}
     private boolean live(){return !stopped&&liveRequested&&SystemClock.elapsedRealtime()<liveUntil;}
-    String remoteStatus(){try{return new JSONObject().put("live",live()).put("cameraOn",cameraOn).put("cameraId",cameraId).put("status",cameraStatus).put("faceAnalysis",false).put("lastCaptureId",lastCaptureId).put("quietStart",quietStart).put("quietEnd",quietEnd).put("automaticAllowed",automaticAllowed()).put("uptimeMs",SystemClock.elapsedRealtime()).put("streamFrames",streamFrames).put("streamFps",streamFps).put("streamEncodeMs",streamEncodeMs).toString();}catch(JSONException e){return "{}";}}
+    String remoteStatus(){try{return new JSONObject().put("live",live()).put("cameraOn",cameraOn).put("cameraId",cameraId).put("status",cameraStatus).put("detectionEnabled",seat.detecting()).put("faceAnalysis",false).put("lastCaptureId",lastCaptureId).put("quietStart",quietStart).put("quietEnd",quietEnd).put("automaticAllowed",automaticAllowed()).put("uptimeMs",SystemClock.elapsedRealtime()).put("streamFrames",streamFrames).put("streamFps",streamFps).put("streamEncodeMs",streamEncodeMs).toString();}catch(JSONException e){return "{}";}}
     boolean remote(String action){
         if(stopped||!cameraWanted||activity.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)return false;
         if("capture".equals(action)&&!gallery.enabled())return false;
         cameraHandler.post(()->{if(stopped)return;
-            if("stop".equals(action)){liveVersion++;liveRequested=false;liveFrame=null;closeCamera();return;}
+            if("detect-on".equals(action)||"detect-off".equals(action)){seat.detection("detect-on".equals(action)&&live());return;}
+            if("stop".equals(action)){seat.detection(false);liveVersion++;liveRequested=false;liveFrame=null;closeCamera();return;}
             if("start".equals(action)){boolean already=live();liveRequested=true;liveUntil=SystemClock.elapsedRealtime()+90000;if(!already){liveVersion++;liveFrame=null;streamFrames=0;streamFps=0;firstEncodedAt=0;lastLiveSource=0;ui.post(liveTick);}}
             if("capture".equals(action)){pendingShot=true;if(cameraOn&&activePreview!=null){Size size=activePreview;int generation=cameraGeneration;ui.post(()->savePreview(generation,size,true));return;}}
             lastCamera=0;openCamera();
         });return true;
     }
     StreamFrame streamFrame(){return live()?liveFrame:null;}
-    void streamHeartbeat(){if(liveRequested&&!stopped)liveUntil=SystemClock.elapsedRealtime()+90000;}
+    void streamHeartbeat(){if(liveRequested&&!stopped){liveUntil=SystemClock.elapsedRealtime()+90000;seat.heartbeat();}}
     private void scheduleCamera(){
         if(stopped||!cameraWanted||cameraScheduled)return;cameraScheduled=true;
-        cameraHandler.postDelayed(new Runnable(){public void run(){if(stopped)return;openCamera();cameraHandler.postDelayed(this,15000);}},800);
+        cameraHandler.postDelayed(new Runnable(){public void run(){if(stopped)return;openCamera();cameraHandler.postDelayed(this,5000);}},800);
     }
     private void closeAfterObservation(int generation,Surface target){
         if(generation!=cameraGeneration){target.release();return;}
-        if(stopped||!live()){liveRequested=false;liveFrame=null;closeCamera();target.release();}
+        if(stopped||(!live()&&!seat.previewing())){liveRequested=false;liveFrame=null;closeCamera();target.release();}
         else cameraHandler.postDelayed(()->closeAfterObservation(generation,target),1000);
     }
     private final Runnable liveTick=new Runnable(){public void run(){if(!live())return;long began=SystemClock.uptimeMillis();if(cameraOn)updateLiveFrame();ui.postAtTime(this,Math.max(began+20,SystemClock.uptimeMillis()+1));}};
@@ -207,12 +208,13 @@ final class SensorHub {
         streamHandler.post(()->{Bitmap upright=frame;try{
             if(!live()||version!=liveVersion)return;
             if("2".equals(cameraId)){Matrix m=new Matrix();m.postRotate(90);upright=Bitmap.createBitmap(frame,0,0,frame.getWidth(),frame.getHeight(),m,true);}
-            java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();upright.compress(Bitmap.CompressFormat.JPEG,80,out);long done=SystemClock.elapsedRealtime();if(!live()||version!=liveVersion)return;streamEncodeMs=done-capturedAt;if(firstEncodedAt==0)firstEncodedAt=done;long sequence=++streamFrames;streamFps=sequence<2?0:1000.0*(sequence-1)/Math.max(1,done-firstEncodedAt);liveFrame=new StreamFrame(out.toByteArray(),capturedAt,sequence,streamEncodeMs);
+            if(seat.detecting())seat.draw(upright,capturedAt);java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();upright.compress(Bitmap.CompressFormat.JPEG,80,out);long done=SystemClock.elapsedRealtime();if(!live()||version!=liveVersion)return;streamEncodeMs=done-capturedAt;if(firstEncodedAt==0)firstEncodedAt=done;long sequence=++streamFrames;streamFps=sequence<2?0:1000.0*(sequence-1)/Math.max(1,done-firstEncodedAt);liveFrame=new StreamFrame(out.toByteArray(),capturedAt,sequence,streamEncodeMs);
         }finally{if(upright!=frame)upright.recycle();frame.recycle();liveEncoding=false;if(live())ui.post(this::updateLiveFrame);}});
     }
+    void seatWake(){cameraHandler.post(this::openCamera);}
     private void openCamera(){
-        if(stopped||cameraOn||camera!=null)return;
-        long now=SystemClock.elapsedRealtime();if(!live()&&!pendingShot){if(!automaticAllowed()){cameraStatus="夜间休息 · 声音唤醒";return;}if(!CameraSchedule.due(now,lastCamera))return;}
+        if(stopped||!cameraWanted||activity.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED||cameraOn||camera!=null)return;
+        long now=SystemClock.elapsedRealtime();if(!live()&&!pendingShot&&!seat.previewing()){if(!automaticAllowed()){cameraStatus="夜间休息 · 声音唤醒";return;}if(lastCamera>0&&now-lastCamera<(seat.enabled()?20000:120000))return;}
         final int generation=++cameraGeneration;cameraStatus="正在短时观察";lastCamera=SystemClock.elapsedRealtime();
         try{
             CameraManager manager=(CameraManager)activity.getSystemService(Context.CAMERA_SERVICE);
@@ -259,6 +261,7 @@ final class SensorHub {
     }
     private void observeFrame(){
         if(stopped||!cameraOn)return;cameraFrames++;
+        long seatNow=SystemClock.elapsedRealtime();if(seat.reserve(seatNow)){Bitmap frame=null;try{frame=texture.getBitmap("2".equals(cameraId)?240:320,"2".equals(cameraId)?320:240);}catch(RuntimeException e){Log.w("BloubSeat","Frame read",e);}if(frame==null)seat.cancelFrame();else seat.observe(frame,cameraId,seatNow);}
         long now=SystemClock.elapsedRealtime();if(processing||now-lastBitmap<(live()?1000:450))return;
         lastBitmap=now;processing=true;
         Bitmap source=texture.getBitmap("2".equals(cameraId)?240:320,"2".equals(cameraId)?320:240);if(source==null){processing=false;return;}
@@ -279,10 +282,10 @@ final class SensorHub {
         cameraGeneration++;ImageReader oldReader=photoReader;photoReader=null;if(oldReader!=null)oldReader.close();cameraOn=false;faces=0;motion=0;previousPixels=null;
         CameraCaptureSession s=session;session=null;if(s!=null)s.close();
         CameraDevice d=camera;camera=null;if(d!=null)d.close();
-        if(!stopped)cameraStatus=automaticAllowed()?"相机 "+cameraId+" · 每两分钟观察":"夜间休息 · 声音唤醒";
+        if(!stopped)cameraStatus=automaticAllowed()?"相机 "+cameraId+" · 等待观察":"夜间休息 · 声音唤醒";
     }
     void stop(){
-        stopped=true;liveVersion++;liveRequested=false;liveFrame=null;pendingShot=false;ui.removeCallbacks(publish);
+        stopped=true;seat.suspendObservation();seat.detection(false);liveVersion++;liveRequested=false;liveFrame=null;pendingShot=false;ui.removeCallbacks(publish);
         java.lang.Process p=tofHelper;if(p!=null){try{p.getOutputStream().close();}catch(Exception ignored){}p.destroy();}
         cameraHandler.removeCallbacksAndMessages(null);cameraHandler.post(()->{closeCamera();cameraThread.quitSafely();});streamHandler.post(()->streamThread.quitSafely());
         // Audio reads finish in ~64ms, then release on their own worker.

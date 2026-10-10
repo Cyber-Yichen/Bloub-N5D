@@ -28,5 +28,10 @@
     "path": "android/toolchain/tensorflow-lite-api-2.14.0.aar",
     "url": "https://repo.maven.apache.org/maven2/org/tensorflow/tensorflow-lite-api/2.14.0/tensorflow-lite-api-2.14.0.aar",
     "sha": "1d1ffffe9d15969882c856249a3018ccd2199319e195a63b7b58699fc8cb836f"
+  },
+  {
+    "path": "android/assets/seat-detector.tflite",
+    "url": "https://storage.googleapis.com/download.tensorflow.org/models/tflite/task_library/object_detection/android/lite-model_efficientdet_lite0_detection_metadata_1.tflite",
+    "sha": "2e04c53bfeac0ac2a30c057c7e2a777594ce39baaac35a92f74fb1e8c4fc4e0b"
   }
 ]

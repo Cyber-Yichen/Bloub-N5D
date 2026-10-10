@@ -12,7 +12,7 @@ import java.util.zip.*;
 /** Foreground LAN gallery and user-controlled camera. Protected routes require a six-digit code. */
 final class GalleryServer {
   static final int PORT=8768;
-  interface CameraControl {String status();boolean command(String action);SensorHub.StreamFrame frame();void heartbeat();}
+  interface CameraControl {String status();boolean command(String action);SensorHub.StreamFrame frame();void heartbeat();String presence(int days);String detections();}
   private final CameraControl camera;private final Semaphore streams=new Semaphore(2);private final Map<String,long[]> failedCodes=new HashMap<>();
   private final Context context;private final Gallery gallery;private final String key;
   private volatile ServerSocket listener;private volatile String error="";
@@ -77,15 +77,18 @@ final class GalleryServer {
     if("POST".equals(parts[0])){
       if(!auth.equals("Bearer "+key)){json(out,401,"{\"error\":\"bearer_required\"}");return;}
       String origin=hdr.getOrDefault("origin","");if(!origin.isEmpty()&&!origin.equals("http://"+hdr.getOrDefault("host",""))){json(out,400,"{\"error\":\"invalid_origin\"}");return;}
+      if(path.matches("/api/camera/detection/(on|off)")){boolean accepted=camera.command(path.endsWith("/on")?"detect-on":"detect-off");json(out,accepted?200:409,accepted?"{\"accepted\":true}":"{\"error\":\"enable_camera_on_device\"}");return;}
       if(path.matches("/api/camera/(start|stop|capture)")){String action=path.substring(path.lastIndexOf('/')+1);boolean accepted=camera.command(action);json(out,accepted?200:409,accepted?"{\"accepted\":true}":"{\"error\":\"enable_camera_and_saving_on_device\"}");return;}
       json(out,405,"{\"error\":\"unsupported_action\"}");return;
     }
     if(!"GET".equals(parts[0])){json(out,405,"{\"error\":\"method_not_allowed\"}");return;}
+    if("/api/detections".equals(path)){json(out,200,camera.detections());return;}
+    if("/api/presence".equals(path)){int days=7;try{days=Integer.parseInt(q.getOrDefault("days","7"));}catch(NumberFormatException bad){json(out,400,"{\"error\":\"invalid_days\"}");return;}if(days<1||days>90){json(out,400,"{\"error\":\"invalid_days\"}");return;}json(out,200,camera.presence(days));return;}
     if("/api/camera".equals(path)){json(out,200,camera.status());return;}
     if("/api/camera/stream".equals(path)){stream(client,out);return;}
     if("/".equals(path)){bytes(out,200,"text/html; charset=utf-8",new String(asset("lan-gallery.html"),StandardCharsets.UTF_8).replace("__KEY__",key).getBytes(StandardCharsets.UTF_8));return;}
     if("/gallery.js".equals(path)){bytes(out,200,"application/javascript; charset=utf-8",asset("lan-gallery.js"));return;}
-    if("/api/health".equals(path)){json(out,200,new JSONObject().put("version","0.7.0").put("retentionDays",7).put("galleryReadOnly",true).put("cameraControl",true).put("deviceTime",System.currentTimeMillis()).toString());return;}
+    if("/api/health".equals(path)){json(out,200,new JSONObject().put("version","0.8.0").put("retentionDays",7).put("galleryReadOnly",true).put("cameraControl",true).put("deviceTime",System.currentTimeMillis()).toString());return;}
     if("/api/photos".equals(path)){long before=0;try{before=Long.parseLong(q.getOrDefault("before","0"));}catch(NumberFormatException bad){json(out,400,"{\"error\":\"invalid_cursor\"}");return;}json(out,200,listing(Math.max(0,before)).toString());return;}
     if("/api/archive.zip".equals(path)){archive(out);return;}
     String[] route=path.split("/");

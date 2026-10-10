@@ -2,7 +2,7 @@
 
 一个在 N5D 上独立运行的桌边小伙伴。基于 [Jérémy Perret 的 Bloub](https://github.com/jeremy-prt/bloub)，按屏幕、挖孔和实体灯环的实测尺寸重新编排动作。
 
-[下载 APK](https://github.com/Cyber-Yichen/Bloub-N5D/releases/latest) · [使用与构建](N5D-README.md) · [动画设计](N5D-DESIGN.md) · [开源引用](REFERENCES.md) · [免责声明](DISCLAIMER.md) · [局域网图库与 API](docs/gallery-api.md) · [上游说明](docs/UPSTREAM-README.md)
+[下载 APK](https://github.com/Cyber-Yichen/Bloub-N5D/releases/latest) · [使用与构建](N5D-README.md) · [动画设计](N5D-DESIGN.md) · [开源引用](REFERENCES.md) · [免责声明](DISCLAIMER.md) · [局域网图库与 API](docs/gallery-api.md) · [工位统计与 API](docs/presence-api.md) · [上游说明](docs/UPSTREAM-README.md)
 
 ![陪伴设置](docs/n5d-assets/companion.png)
 
@@ -13,7 +13,7 @@
 - 白底黑色、深海薄荷、暖沙棕色、黑底银白和自动换色；切换时柔和过渡。
 - 可选音乐耳朵、短时相机观察、ToF 靠近反应。音频只在本机内存分析；观察照片可保存到本机图库，保留 7 天；可选局域网下载、实时预览和网页拍照。
 - 点击空白处看过去；按住拖动让目光跟随；轻触 Bot 眨眼并轻轻弹一下。松手后停留片刻，再自然回到剧情。
-- 长按打开“陪伴 / 感知 / 图库 / 关于”；关于中可打开本项目 GitHub。
+- 长按打开“陪伴 / 感知 / 图库 / 工位 / 关于”；关于中可打开本项目 GitHub。
 
 ![实机点击右上方时的目光](docs/n5d-assets/touch.png)
 
@@ -38,6 +38,10 @@
 局域网电脑打开设备网址，输入六位访问码后可下载照片、开启实时画面、主动拍照；AI 接口、分页与元数据见 [局域网图库文档](docs/gallery-api.md)。新照片按保存顺序显示，避免设备时间回拨后排序异常。
 
 本地数据分析可使用 [图库导出工具](android/gallery-export.mjs)，用法见 [使用说明](N5D-README.md#本机图库与本地分析)。实际办公室照片与诊断记录不提交到仓库。
+
+## 工位观察
+
+选择座位区域，分别确认空位和在位后，设备用小型人体检测模型与本地自适应分类层估算在位时间。设备与网页都有全天时间轴和最近七天时长图；未观察 / 待确认时段单独显示。预训练模型权重固定，工位判断参数在稳定样本上缓慢适应；不区分坐在同一座位的不同人。网页实时画面可开启检测框，显示类别和置信度。使用与数据规则见 [工位统计文档](docs/presence-api.md)。
 
 ## 快速开始
 

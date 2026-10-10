@@ -20,7 +20,7 @@ import org.json.JSONArray;
 /** Packaged UI only; optional authenticated LAN downloads. ToF reads one fixed node. */
 public final class MainActivity extends Activity {
     private final Handler ui=new Handler(Looper.getMainLooper());
-    private Gallery gallery;private GalleryServer galleryServer;
+    private SeatMonitor seat;private Gallery gallery;private GalleryServer galleryServer;
     private WebView web;
     private Lights lights;
     private volatile SensorHub sensors;private TextureView cameraTexture;
@@ -30,11 +30,13 @@ public final class MainActivity extends Activity {
     private static final String ORIGIN="https://appassets.androidplatform.net/";
 
     @Override public void onCreate(Bundle saved){
-        super.onCreate(saved);gallery=new Gallery(this);gallery.prune();gallery.schedule();galleryServer=new GalleryServer(this,gallery,new GalleryServer.CameraControl(){
+        super.onCreate(saved);seat=new SeatMonitor(this);gallery=new Gallery(this);gallery.prune();gallery.schedule();galleryServer=new GalleryServer(this,gallery,new GalleryServer.CameraControl(){
             public String status(){SensorHub hub=sensors;try{return new JSONObject(hub==null?"{}":hub.remoteStatus()).put("available",foreground&&cameraEnabled&&checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED).put("saving",gallery.enabled()).toString();}catch(Exception e){return "{}";}}
             public boolean command(String action){SensorHub hub=sensors;return foreground&&cameraEnabled&&hub!=null&&hub.remote(action);}
             public SensorHub.StreamFrame frame(){SensorHub hub=sensors;return hub==null?null:hub.streamFrame();}
             public void heartbeat(){SensorHub hub=sensors;if(hub!=null)hub.streamHeartbeat();}
+            public String presence(int days){return seat.snapshot(days);}
+            public String detections(){return seat.detections();}
         });
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON|WindowManager.LayoutParams.FLAG_FULLSCREEN);
         WindowManager.LayoutParams attrs=getWindow().getAttributes();attrs.screenBrightness=.42f;
@@ -78,26 +80,33 @@ public final class MainActivity extends Activity {
         if(web!=null&&ready)web.evaluateJavascript("window.n5dStatus&&window.n5dStatus("+JSONObject.quote(code)+")",null);
     }
     @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(focus)hideBars();}
-    @Override public void onResume(){super.onResume();foreground=true;if(galleryServer!=null)galleryServer.start();if(web!=null)web.onResume();lights=new Lights(this,this::status);status(enabled?"IDLE":"OFF");restartSensors();}
-    @Override public void onPause(){foreground=false;if(galleryServer!=null)galleryServer.stop();if(sensors!=null){sensors.stop();sensors=null;}if(lights!=null){lights.stop();lights=null;}if(web!=null)web.onPause();super.onPause();}
-    @Override public void onDestroy(){if(web!=null){web.removeJavascriptInterface("N5D");web.destroy();web=null;}super.onDestroy();}
+    @Override public void onResume(){super.onResume();foreground=true;seat.resume();if(galleryServer!=null)galleryServer.start();if(web!=null)web.onResume();lights=new Lights(this,this::status);status(enabled?"IDLE":"OFF");restartSensors();}
+    @Override public void onPause(){foreground=false;seat.pause();if(galleryServer!=null)galleryServer.stop();if(sensors!=null){sensors.stop();sensors=null;}if(lights!=null){lights.stop();lights=null;}if(web!=null)web.onPause();super.onPause();}
+    @Override public void onDestroy(){if(seat!=null)seat.destroy();if(web!=null){web.removeJavascriptInterface("N5D");web.destroy();web=null;}super.onDestroy();}
     @Override public void onBackPressed(){web.evaluateJavascript("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))",null);}
 
     private void restartSensors(){
         if(sensors!=null){sensors.stop();sensors=null;}
         if(!foreground)return;
-        sensors=new SensorHub(this,cameraTexture,micEnabled,cameraEnabled,tofEnabled,data->{
+        sensors=new SensorHub(this,cameraTexture,micEnabled,cameraEnabled,tofEnabled,seat,data->{
             if(foreground&&ready&&web!=null)web.evaluateJavascript("window.n5dSensors&&window.n5dSensors("+data.toString()+")",null);
         });
     }
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);if(request==41)restartSensors();}
     private final class Bridge {
+        @JavascriptInterface public String seatInfo(){return seat.snapshot(7);}
+        @JavascriptInterface public String seatFrame(){return seat.frame();}
+        @JavascriptInterface public void seatEnabled(boolean value){ui.post(()->{seat.enabled(value);SensorHub hub=sensors;if(hub!=null)hub.seatWake();});}
+        @JavascriptInterface public void seatPreview(boolean value){seat.preview(value);ui.post(()->{SensorHub hub=sensors;if(value&&hub!=null)hub.seatWake();});}
+        @JavascriptInterface public void seatRegion(float left,float top,float right,float bottom){seat.region(left,top,right,bottom);}
+        @JavascriptInterface public String seatLabel(String kind){return seat.label(kind);}
+
         @JavascriptInterface public String galleryServerInfo(){return galleryServer.info();}
         @JavascriptInterface public void galleryServerEnabled(boolean value){ui.post(()->{galleryServer.enabled(value);if(value&&foreground)galleryServer.start();else galleryServer.stop();});}
         @JavascriptInterface public void copyGalleryAddress(){ui.post(()->{try{String address=new JSONObject(galleryServer.info()).optString("url");if(!address.isEmpty()){android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Bloub 局域网图库",address));Toast.makeText(MainActivity.this,"下载网址已复制",Toast.LENGTH_SHORT).show();}}catch(Exception ignored){}});}
         @JavascriptInterface public void quietHours(int start,int end){if(start<0||start>=1440||end<0||end>=1440)return;ui.post(()->{getSharedPreferences("sensors",0).edit().putInt("quiet_start",start).putInt("quiet_end",end).apply();SensorHub hub=sensors;if(hub!=null)hub.quietHours(start,end);});}
         @JavascriptInterface public String cameraInfo(){return SensorHub.cameraInfo(MainActivity.this);}
-        @JavascriptInterface public void cameraSource(String id){if(!"2".equals(id)&&!"3".equals(id))return;ui.post(()->{String old=getSharedPreferences("sensors",0).getString("camera_id","2");getSharedPreferences("sensors",0).edit().putString("camera_id",id).apply();if(!id.equals(old)&&cameraEnabled)restartSensors();});}
+        @JavascriptInterface public void cameraSource(String id){if(!"2".equals(id)&&!"3".equals(id))return;ui.post(()->{String old=getSharedPreferences("sensors",0).getString("camera_id","2");getSharedPreferences("sensors",0).edit().putString("camera_id",id).apply();seat.cameraChanged(id);if(!id.equals(old)&&cameraEnabled)restartSensors();});}
         @JavascriptInterface public String galleryList(long before){return gallery.list(before);}
         @JavascriptInterface public void galleryEnabled(boolean value){gallery.enabled(value);}
         @JavascriptInterface public boolean galleryDelete(String id){return gallery.delete(id);}

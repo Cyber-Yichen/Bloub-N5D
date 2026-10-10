@@ -1,0 +1,6 @@
+export interface PresenceInterval{start:number;end:number;state:'occupied'|'empty'|'unknown'}
+export interface PresenceDay{date:string;start:number;end:number;occupiedMs:number;emptyMs:number;uncertainMs:number;observedMs:number;firstOccupiedAt:number;lastOccupiedAt:number;intervals:PresenceInterval[]}
+export interface PresenceInfo{enabled:boolean;active:boolean;state:string;status:string;ready:boolean;emptyConfirmed:boolean;occupiedConfirmed:boolean;message:string;cameraId:string;roi:number[];lastObservedAt:number;personScore:number;inferenceMs:number;adaptations:number;timezone:string;deviceTime:number;days:PresenceDay[]}
+export const duration=(ms:number)=>{const n=Math.floor(ms/60000);return n>=60?`${Math.floor(n/60)}小时 ${n%60}分`:ms>0&&n===0?'不到1分钟':`${n}分钟`}
+export function clock(at:number,zone:string){if(!at)return '—';try{return new Intl.DateTimeFormat('zh-CN',{timeZone:zone,hour:'2-digit',minute:'2-digit',hour12:false}).format(at)}catch{return new Date(at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false})}}
+export function intervalStyle(interval:PresenceInterval,day:PresenceDay){const span=day.end-day.start;if(span<=0)return {left:'0%',width:'0%'};return {left:Math.max(0,(interval.start-day.start)/span)*100+'%',width:Math.max(0,(Math.min(interval.end,day.end)-Math.max(interval.start,day.start))/span)*100+'%'}}

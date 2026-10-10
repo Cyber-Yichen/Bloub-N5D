@@ -1,0 +1,7 @@
+EfficientDet-Lite0
+Copyright 2020 Google Research. All Rights Reserved.
+Source: https://github.com/google/automl/tree/master/efficientdet
+Model distributed by the official TensorFlow Android object detection example:
+https://github.com/tensorflow/examples/tree/master/lite/examples/object_detection/android
+License: Apache License 2.0; see TENSORFLOW-LICENSE.txt.
+The model weights are unmodified. seat-labels.txt is the embedded labelmap.txt.

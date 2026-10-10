@@ -12,7 +12,7 @@ import { reactScene,emptySensors,type SensorData } from './reactions'
 import { GEOMETRY, sampleScene, externalPose, smooth, type Scene, type CompanionState } from './scene'
 import { paletteAt, blendPalette, dvdPalette, type ThemeId, type Palette } from './themes'
 
-interface NativeBridge { frame(json: string): void; sensors(mic:boolean,camera:boolean,tof:boolean):void; enableLights(on: boolean): void; brightness(value: number): void; ready(): void; galleryList(before:number):string;galleryServerInfo():string;galleryServerEnabled(value:boolean):void;copyGalleryAddress():void;cameraInfo():string;cameraSource(id:string):void;quietHours(start:number,end:number):void;galleryEnabled(value:boolean):void;galleryDelete(id:string):boolean;galleryClear():void;openRingStudio(): void; openProject():void }
+interface NativeBridge { seatInfo():string;seatFrame():string;seatEnabled(value:boolean):void;seatPreview(value:boolean):void;seatRegion(left:number,top:number,right:number,bottom:number):void;seatLabel(kind:string):string; frame(json: string): void; sensors(mic:boolean,camera:boolean,tof:boolean):void; enableLights(on: boolean): void; brightness(value: number): void; ready(): void; galleryList(before:number):string;galleryServerInfo():string;galleryServerEnabled(value:boolean):void;copyGalleryAddress():void;cameraInfo():string;cameraSource(id:string):void;quietHours(start:number,end:number):void;galleryEnabled(value:boolean):void;galleryDelete(id:string):boolean;galleryClear():void;openRingStudio(): void; openProject():void }
 declare global { interface Window {
   N5D?: NativeBridge;
   n5dStatus?: (code:string) => void;

@@ -1,6 +1,6 @@
 # 局域网图库与相机 API
 
-适用于 Bloub-N5D 0.7.0。照片保留七天；音频不保存，人脸分析暂不启用，当前不识别身份或真实情绪。
+适用于 Bloub-N5D 0.8.0。照片保留七天；音频不保存，人脸分析暂不启用，当前不识别身份或真实情绪。工位时间统计与流式检测框见 [工位 API](presence-api.md)。
 
 ## 打开图库
 
@@ -87,7 +87,7 @@ curl -H "Authorization: Bearer $N5D_CODE" "$N5D_URL/api/camera"
 
 控制请求成功返回 HTTP 200 和 `{"accepted":true}`，表示操作已排队。读取相机状态的 lastCaptureId，等它变化后再读取对应图片或元数据；接受请求不等于拍照已完成。
 
-相机状态包括 available、saving、live、cameraOn、cameraId、status、lastCaptureId、quietStart、quietEnd、automaticAllowed、faceAnalysis、uptimeMs、streamFrames、streamFps、streamEncodeMs。streamFps 是本次预览的设备编码平均帧率，不代表网页显示帧率；streamEncodeMs 是最近一帧从读取纹理到编码完成的耗时。休息时间使用一天中的分钟数（0–1439）。同一个设备的实时相机由各网页共享，停止操作会停止当前实时观察。
+相机状态包括 detectionEnabled、available、saving、live、cameraOn、cameraId、status、lastCaptureId、quietStart、quietEnd、automaticAllowed、faceAnalysis、uptimeMs、streamFrames、streamFps、streamEncodeMs。streamFps 是本次预览的设备编码平均帧率，不代表网页显示帧率；streamEncodeMs 是最近一帧从读取纹理到编码完成的耗时。休息时间使用一天中的分钟数（0–1439）。同一个设备的实时相机由各网页共享，停止操作会停止当前实时观察。
 
 ### 流式性能与测量
 

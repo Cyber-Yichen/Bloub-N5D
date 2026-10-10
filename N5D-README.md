@@ -1,4 +1,4 @@
-# Bloub 桌边 · 0.7.0 使用与构建
+# Bloub 桌边 · 0.8.0 使用与构建
 
 项目：[Cyber-Yichen/Bloub-N5D](https://github.com/Cyber-Yichen/Bloub-N5D)。上游基线 b4bb3c1b5f93c7b87a2e8d620f667c4093d97749，保留 MIT 许可。
 
@@ -9,6 +9,7 @@
 - **陪伴**：自由探索或安静陪伴；灯环互动；亮度 15%–100%；四套配色和自动轮换。默认白底黑 Bot、亮度 42%。手动换色渐变 3 s，自动每三分钟轮换、渐变 12 s。
 - **感知**：音乐耳朵、偶尔看看、靠近感应。首次安装均关闭，需要时独立开启。
 - **图库**：照片保留七天，查看、单张删除、清空或关闭保存；可选局域网电脑下载、实时预览和拍照。
+- **工位**：选择座位区域、确认空位与在位，查看全天时间轴和最近七天时长。记录保留九十天；网页同步显示并可选流式检测框。
 - **关于**：版本、许可、上游来源，以及本项目 GitHub 入口。交给系统浏览器打开；没有浏览器时复制链接。
 - 打开设置时暂停故事并归还灯环；收起后继续。前台保持亮屏，切后台暂停故事、停止感知并归还灯光。
 - 按洗牌袋随机选择完整段落，中间休息 8–24 秒并更换落脚点，避免立即重复；灯光段落有至少 35 秒间隔。不需要电脑。六分钟时间轴只作为开发诊断的标准片段来源。未来本地状态接口目前为 window.companion.setState(state,duration)，支持 idle/thinking/success/attention/sleep；没有电脑端监听器。
@@ -75,7 +76,7 @@ WSL 网络不可用时，可以在同一个 checkout 通过 Windows 下载，再
 powershell -ExecutionPolicy Bypass -File android/fetch-model.ps1
 ```
 
-每个依赖的来源、版本和 SHA256 固定在 android/dependencies.json 与 android/dependencies.sha256。构建前验证哈希；输出 android/dist/Bloub-N5D-0.7.0.apk 和 SHA256SUMS.txt。minSdk23、targetSdk27，打包 arm64-v8a TFLite。
+每个依赖的来源、版本和 SHA256 固定在 android/dependencies.json 与 android/dependencies.sha256。构建前验证哈希；输出 android/dist/Bloub-N5D-0.8.0.apk 和 SHA256SUMS.txt。minSdk23、targetSdk27，打包 arm64-v8a TFLite。
 
 开发签名密钥会在本机 android/toolchain/development.jks 自动生成，不提交。不同人的本地开发签名不同；发布包使用维护者的同一签名。产物、工具链、模型下载缓存、设备诊断报告均按 .gitignore 排除；模型与附带许可作为明确的运行资源保留。
 
@@ -134,3 +135,9 @@ node android/gallery-export.mjs --limit=12
 图库 → 电脑下载可开启局域网服务；电脑输入六位访问码即可看图、下载单张或 ZIP、实时预览和拍照。服务跟随前台。接口、方向、游标和流式性能说明见 [图库与相机 API](docs/gallery-api.md)。新照片按递增 captureOrder 排序，设备时间回拨后仍显示在前。
 
 MJPEG 改为独立编码线程和最新帧发送；读取纹理、帧差与编码分开调度。相机 2 单客户端、动画正常运行时实测约 24.2 fps，读取到电脑收到数据中位约 56 ms、P95 约 77 ms；设置打开时约 28.9 fps，另一轮网络波动时 P95 曾达到 221 ms；尚有无线网络波动，不代表完整相机到网页显示延迟。人脸分析保持关闭。
+
+## 工位统计 · 0.8
+
+设置新增工位页。开启相机后，选择座位区域并确认空位、在位，再开启工位观察。内置 EfficientDet-Lite0 量化人体检测模型，设备本地 CPU 推理；固定模型加有限度在线原型学习。每约二十秒短时观察，连续确认后才计时，后台、暗光、采样中断和时间跳变不补算在位。设备与网页显示全天时间轴和七天时长图，统计保留九十天。
+
+网页实时画面新增检测框开关，框、类别和置信度画入 MJPEG，识别与编码独立调度。API、校准和估算边界见 [工位统计文档](docs/presence-api.md)。

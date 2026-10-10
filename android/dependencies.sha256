@@ -4,3 +4,5 @@ cdf24d193e196d9e95912a2667051ae203e92a2ba09449218ccb40ef787c6df2  android/assets
 709db81fbfba461b1ed27e9c1e83817c2d7cc60469074eaa36c88fb8dbea4886  android/toolchain/tensorflow-lite-2.14.0.aar
 1d1ffffe9d15969882c856249a3018ccd2199319e195a63b7b58699fc8cb836f  android/toolchain/tensorflow-lite-api-2.14.0.aar
 59753e70a74f918389cc87f1b7d66b5c0862932559167425708ded159e3de439  android/toolchain/r8-8.3.37.jar
+2e04c53bfeac0ac2a30c057c7e2a777594ce39baaac35a92f74fb1e8c4fc4e0b  android/assets/seat-detector.tflite
+f8803ef7900160c629d570848dfda4175e21667bf7b71f73f8ece4938c9f2bf2  android/assets/seat-labels.txt

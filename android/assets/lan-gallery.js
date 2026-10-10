@@ -62,7 +62,7 @@ async function cameraStatus(){
  }catch{}
 }
 byId('start-stream').addEventListener('click',async()=>{
- try{await cameraRequest('start');await new Promise(r=>setTimeout(r,300));streaming=true;showStream();cameraStatus()}catch(e){byId('capture-status').textContent=e.message}
+ try{await cameraRequest('start');await new Promise(r=>setTimeout(r,300));streaming=true;if(byId("show-detections").checked)await cameraRequest("detection/on");showStream();cameraStatus()}catch(e){byId('capture-status').textContent=e.message}
 })
 async function stopStream(){streaming=false;clearInterval(streamTimer);byId('live-image').removeAttribute('src');byId('live-area').hidden=true;try{await cameraRequest('stop')}catch{}cameraStatus()}
 byId('stop-stream').addEventListener('click',stopStream)
@@ -76,3 +76,23 @@ byId('capture').addEventListener('click',async()=>{
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&streaming)stopStream()})
 window.addEventListener('pagehide',()=>{if(streaming)fetch('/api/camera/stop',{method:'POST',headers:{Authorization:'Bearer '+key},keepalive:true}).catch(()=>{})})
 cameraStatus();setInterval(cameraStatus,2000)
+
+byId('show-detections').addEventListener('change',async()=>{if(!streaming)return;try{await cameraRequest(byId('show-detections').checked?'detection/on':'detection/off')}catch(e){byId('capture-status').textContent=e.message;byId('show-detections').checked=false}})
+let presenceData=null,selectedDay=''
+const presenceDuration=ms=>{const n=Math.floor(ms/60000);return n>=60?Math.floor(n/60)+'小时 '+n%60+'分':ms>0&&n===0?'不到1分钟':n+'分钟'}
+const compactDuration=ms=>{const n=Math.floor(ms/60000);return n>=60?Math.floor(n/60)+'h'+n%60+'m':n+'m'}
+function presenceClock(at){if(!at)return '—';try{return new Intl.DateTimeFormat('zh-CN',{timeZone:presenceData.timezone,hour:'2-digit',minute:'2-digit',hour12:false}).format(at)}catch{return new Date(at).toLocaleTimeString()}}
+function drawPresence(){
+ if(!presenceData?.days?.length)return
+ const days=presenceData.days,today=days.at(-1),day=days.find(d=>d.date===selectedDay)||today
+ byId('presence-status').textContent=presenceData.status+(presenceData.ready?'':' · 请在设备校准座位')
+ byId('presence-total').textContent=(day.date===today.date?'今日':day.date)+'在位 '+presenceDuration(day.occupiedMs)
+ byId('presence-first').textContent='首次在位 '+presenceClock(day.firstOccupiedAt)
+ byId('presence-track').replaceChildren()
+ for(const part of day.intervals){const span=document.createElement('span');span.className=part.state;span.style.left=Math.max(0,(part.start-day.start)/(day.end-day.start))*100+'%';span.style.width=Math.max(0,(part.end-part.start)/(day.end-day.start))*100+'%';span.title=presenceClock(part.start)+'–'+presenceClock(part.end)+' '+(part.state==='occupied'?'有人':part.state==='empty'?'无人':'待确认');byId('presence-track').append(span)}
+ byId('presence-days').replaceChildren();const max=Math.max(3600000,...days.map(d=>d.occupiedMs))
+ for(const d of days){const button=document.createElement('button');button.setAttribute('aria-pressed',String(d.date===day.date));button.title=d.date+' '+presenceDuration(d.occupiedMs);const value=document.createElement('small');value.textContent=compactDuration(d.occupiedMs);const bar=document.createElement('div'),fill=document.createElement('i');fill.style.height=Math.max(d.occupiedMs>0?3:0,d.occupiedMs/max*100)+'%';bar.append(fill);const date=document.createElement('span');date.textContent=d.date.slice(5);button.append(value,bar,date);button.addEventListener('click',()=>{selectedDay=d.date;drawPresence()});byId('presence-days').append(button)}
+}
+async function refreshPresence(){try{const r=await fetch('/api/presence?days=7',{headers:{Authorization:'Bearer '+key},cache:'no-store'});if(!r.ok)throw Error();presenceData=await r.json();drawPresence()}catch{byId('presence-status').textContent='工位记录暂不可用'}}
+async function refreshDetections(){if(!streaming||!byId('show-detections').checked){byId('detection-summary').textContent='';return}try{const r=await fetch('/api/detections',{headers:{Authorization:'Bearer '+key},cache:'no-store'});if(!r.ok)return;const d=await r.json();byId('detection-summary').textContent=d.enabled?(d.boxes.length+'个目标'):'检测准备中'}catch{}}
+refreshPresence();setInterval(refreshPresence,10000);setInterval(refreshDetections,1000)

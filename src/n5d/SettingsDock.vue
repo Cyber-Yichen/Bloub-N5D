@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import GalleryDock from './GalleryDock.vue'
+import SeatDock from './SeatDock.vue'
 import { ref } from 'vue'
 import { THEMES,type ThemeId } from './themes'
 import type { SensorData } from './reactions'
 import { PROJECT } from './project'
 defineProps<{calm:boolean;lights:boolean;brightness:number;theme:ThemeId;mic:boolean;camera:boolean;cameraId:string;quietStart:string;quietEnd:string;tof:boolean;sensors:SensorData;status:string;native:boolean}>()
 const emit=defineEmits<{quietHours:[start:string,end:string];cameraSource:[id:string];calibrate:[];close:[];calm:[];lights:[];brightness:[value:number];theme:[id:ThemeId];sensor:[id:'mic'|'camera'|'tof'];ring:[];project:[]}>()
-const tab=ref<'companion'|'senses'|'gallery'|'about'>('companion')
+const tab=ref<'companion'|'senses'|'gallery'|'seat'|'about'>('companion')
 </script>
 <template>
   <section class="controls" role="dialog" aria-modal="true" aria-label="Bloub 桌边设置" @pointerdown.stop @pointerup.stop>
@@ -26,6 +27,7 @@ const tab=ref<'companion'|'senses'|'gallery'|'about'>('companion')
         <button :aria-current="tab==='companion'?'page':undefined" @click="tab='companion'"><span>陪伴</span></button>
         <button :aria-current="tab==='senses'?'page':undefined" @click="tab='senses'"><span>感知</span></button>
         <button :aria-current="tab==='gallery'?'page':undefined" @click="tab='gallery'"><span>图库</span></button>
+        <button :aria-current="tab==='seat'?'page':undefined" @click="tab='seat'"><span>工位</span></button>
         <button :aria-current="tab==='about'?'page':undefined" @click="tab='about'"><span>关于</span></button>
       </nav>
       <span class="rail-version">N5D · v{{ PROJECT.version }}</span>
@@ -33,7 +35,7 @@ const tab=ref<'companion'|'senses'|'gallery'|'about'>('companion')
     <div class="dock-content">
       <header class="dock-head">
         <div><span class="eyebrow">{{ tab==='about'?'BLOUB / OPEN SOURCE':tab==='gallery'?'BLOUB / GALLERY':tab==='senses'?'BLOUB / SENSES':'BLOUB / COMPANION' }}</span>
-          <h1>{{ tab==='about'?'一个会探索的桌边伙伴':tab==='gallery'?'图库':tab==='senses'?'让它感受桌边的动静':'按你的节奏陪伴' }}</h1>
+          <h1>{{ tab==='about'?'一个会探索的桌边伙伴':tab==='gallery'?'图库':tab==='seat'?'工位':tab==='senses'?'让它感受桌边的动静':'按你的节奏陪伴' }}</h1>
         </div>
         <button class="close" @click="emit('close')" aria-label="收起设置">×</button>
       </header>
@@ -67,6 +69,7 @@ const tab=ref<'companion'|'senses'|'gallery'|'about'>('companion')
 
       </div>
       <div v-else-if="tab==='gallery'" class="dock-body"><GalleryDock/></div>
+      <div v-else-if="tab==='seat'" class="dock-body"><SeatDock :camera="camera" :native="native"/></div>
       <div v-else class="dock-body about-body">
         <div class="about-intro"><span class="version-pill">v{{ PROJECT.version }} · MIT</span><p>屏幕里的伙伴，灯环上的小影子。</p></div>
         <button class="github-card" @click="emit('project')" aria-label="打开 Bloub-N5D GitHub 项目"><span><strong>GitHub 开源项目</strong><small>Cyber-Yichen / Bloub-N5D</small></span><b>↗</b></button>
