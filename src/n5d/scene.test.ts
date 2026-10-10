@@ -46,10 +46,10 @@ describe('N5D physical choreography',()=>{
         if(white)expect(frame.white[nearest]).toBe(0)
         else expect(frame.rgb.slice(nearest*3,nearest*3+3)).toEqual([0,0,0])
       }
-      expect(frame.white.filter(v=>v===9).length).toBeGreaterThan(18)
+      expect(frame.white.filter(v=>v===255).length).toBeGreaterThan(18)
     }
     // No dark gap anticipates the body crossing the physical gap.
-    for(const t of [149,150,151])expect(Math.min(...sampleLights(sampleScene(t),THEMES[0]).white)).toBe(9)
+    for(const t of [149,150,151])expect(Math.min(...sampleLights(sampleScene(t),THEMES[0]).white)).toBe(255)
 
     // From x=980 the outgoing wave reaches the near side first, then the far side.
     const energy=(t:number,i:number)=>sampleLights(sampleScene(t),THEMES[0]).rgb.slice(i*3,i*3+3).reduce((a,b)=>a+b,0)
@@ -87,7 +87,7 @@ describe('N5D physical choreography',()=>{
     for(let t=0;t<PERIOD*8;t+=.2)found.add(shapeAt(t,1234))
     expect([...found].sort()).toEqual(SHAPES.map(s=>s.id).sort())
     for(let t=0;t<360;t+=.1)expect(shapeAt(t,1234)).toBe(shapeAt(t,1234))
-    expect(shapeAt(58,1234)).toBe('cercle')
+    expect(sampleScene(58,false,1234).shape).toBe('cercle')
   })
   it('grows while swallowing bubbles, then settles back to resting size',()=>{
     expect(bubblesAt(88).length).toBeGreaterThan(0)
@@ -106,7 +106,7 @@ describe('N5D physical choreography',()=>{
       expect(f.bodyPath).not.toMatch(/NaN|Infinity/)
       expect(Math.hypot(s.x-previous.x,s.y-previous.y)).toBeLessThan(15)
       if(s.x<1600){expect(s.y-170*s.scale).toBeGreaterThan(0);expect(s.y+170*s.scale).toBeLessThan(720)}
-      if(n%3===0){const lights=sampleLights(s,THEMES[0]);expect(lights.rgb.length).toBe(72);expect(lights.white.length).toBe(24);expect([...lights.rgb,...lights.white].every(v=>Number.isInteger(v)&&v>=0&&v<=68)).toBe(true)}
+      if(n%3===0){const lights=sampleLights(s,THEMES[0]);expect(lights.rgb.length).toBe(72);expect(lights.white.length).toBe(24);expect([...lights.rgb,...lights.white].every(v=>Number.isInteger(v)&&v>=0&&v<=255)).toBe(true)}
       previous=s
     }
   })

@@ -20,6 +20,7 @@ import org.json.JSONArray;
 /** Offline appliance: only packaged assets can execute, with no Internet permission; the optional ToF helper only reads one fixed node. */
 public final class MainActivity extends Activity {
     private final Handler ui=new Handler(Looper.getMainLooper());
+    private Gallery gallery;
     private WebView web;
     private Lights lights;
     private SensorHub sensors;private TextureView cameraTexture;
@@ -29,7 +30,7 @@ public final class MainActivity extends Activity {
     private static final String ORIGIN="https://appassets.androidplatform.net/";
 
     @Override public void onCreate(Bundle saved){
-        super.onCreate(saved);
+        super.onCreate(saved);gallery=new Gallery(this);gallery.prune();gallery.schedule();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON|WindowManager.LayoutParams.FLAG_FULLSCREEN);
         WindowManager.LayoutParams attrs=getWindow().getAttributes();attrs.screenBrightness=.42f;
         if(Build.VERSION.SDK_INT>=28)try{WindowManager.LayoutParams.class.getField("layoutInDisplayCutoutMode").setInt(attrs,Build.VERSION.SDK_INT>=30?3:1);}catch(Exception e){Log.w("BloubN5D","Cutout flag",e);}
@@ -46,6 +47,7 @@ public final class MainActivity extends Activity {
                 String file=request.getUrl().getPath().substring(1);
                 if(file.contains(".."))return denied();
                 try{
+                    if(file.startsWith("observations/")&&file.endsWith(".jpg")){String id=file.substring(13,file.length()-4);Map<String,String> h=new HashMap<>();h.put("Cache-Control","no-store");return new WebResourceResponse("image/jpeg",null,200,"OK",h,gallery.open(id));}
                     String mime=file.endsWith(".js")?"application/javascript":file.endsWith(".css")?"text/css":file.endsWith(".svg")?"image/svg+xml":"text/html";
                     Map<String,String> headers=new HashMap<>();
                     headers.put("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'");
@@ -84,6 +86,11 @@ public final class MainActivity extends Activity {
     }
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);if(request==41)restartSensors();}
     private final class Bridge {
+        @JavascriptInterface public String galleryList(long before){return gallery.list(before);}
+        @JavascriptInterface public void galleryEnabled(boolean value){gallery.enabled(value);}
+        @JavascriptInterface public boolean galleryDelete(String id){return gallery.delete(id);}
+        @JavascriptInterface public void galleryClear(){gallery.clear();}
+
         @JavascriptInterface public void sensors(boolean mic,boolean camera,boolean tof){ui.post(()->{
             micEnabled=mic;cameraEnabled=camera;tofEnabled=tof;
             ArrayList<String> missing=new ArrayList<>();
@@ -95,7 +102,7 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void enableLights(boolean on){ui.post(()->{enabled=on;if(!on&&lights!=null)lights.release("OFF");status(on?"IDLE":"OFF");});}
         @JavascriptInterface public void brightness(double value){
             if(!Double.isFinite(value))return;
-            ui.post(()->{WindowManager.LayoutParams a=getWindow().getAttributes();a.screenBrightness=(float)Math.max(.15,Math.min(.75,value));getWindow().setAttributes(a);});
+            ui.post(()->{WindowManager.LayoutParams a=getWindow().getAttributes();a.screenBrightness=(float)Math.max(.15,Math.min(1,value));getWindow().setAttributes(a);});
         }
         @JavascriptInterface public void frame(String json){
             // Drop before enqueueing; at most one small update per 80 ms from local JS.

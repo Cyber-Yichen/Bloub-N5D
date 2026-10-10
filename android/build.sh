@@ -39,7 +39,7 @@ zipalign -f 4 android/build/unsigned.apk android/build/aligned.apk
 if [[ ! -f android/toolchain/development.jks ]]; then
   "$JAVA_HOME/bin/keytool" -genkeypair -keystore android/toolchain/development.jks -storepass android -keypass android -alias bloub -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=Bloub N5D Development,O=Local,C=CN"
 fi
-apksigner sign --ks android/toolchain/development.jks --ks-key-alias bloub --ks-pass pass:android --key-pass pass:android --out android/dist/Bloub-N5D-0.5.0.apk android/build/aligned.apk
-zipalign -c 4 android/dist/Bloub-N5D-0.5.0.apk
-apksigner verify --verbose android/dist/Bloub-N5D-0.5.0.apk
-(cd android/dist && sha256sum Bloub-N5D-0.5.0.apk > SHA256SUMS.txt)
+apksigner sign --ks android/toolchain/development.jks --ks-key-alias bloub --ks-pass pass:android --key-pass pass:android --out android/dist/Bloub-N5D-0.6.0.apk android/build/aligned.apk
+zipalign -c 4 android/dist/Bloub-N5D-0.6.0.apk
+apksigner verify --verbose android/dist/Bloub-N5D-0.6.0.apk
+(cd android/dist && sha256sum Bloub-N5D-0.6.0.apk > SHA256SUMS.txt)

@@ -8,8 +8,8 @@ import { THEMES } from './themes'
 const time=ref(0),playing=ref(false),zoom=ref(1)
 const palette=THEMES[0],scene=computed(()=>sampleScene(time.value))
 const leds=computed(()=>sampleLights(scene.value,palette))
-const rgb=(i:number)=>'rgb('+leds.value.rgb.slice(i*3,i*3+3).map(v=>Math.min(255,v*3.75)).join(',')+')'
-const white=(i:number)=>'rgb('+[1,1,1].map(()=>Math.min(255,leds.value.white[i]!*10)).join(',')+')'
+const rgb=(i:number)=>'rgb('+leds.value.rgb.slice(i*3,i*3+3).map(v=>v).join(',')+')'
+const white=(i:number)=>'rgb('+[1,1,1].map(()=>leds.value.white[i]!).join(',')+')'
 let raf=0,previous=0
 function tick(ms:number){raf=requestAnimationFrame(tick);if(playing.value&&previous)time.value=(time.value+Math.min((ms-previous)/1000,.1))%PERIOD;previous=ms}
 const resize=()=>zoom.value=Math.min(innerWidth/2600,(innerHeight-60)/840)

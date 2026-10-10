@@ -30,6 +30,7 @@ final class SensorHub {
     private volatile String micStatus="关闭",cameraStatus="关闭",tofStatus="关闭";
     private volatile boolean cameraOn,processing;
     private volatile CameraDevice camera;private volatile CameraCaptureSession session;
+    private int savedGeneration=-1;private final Gallery gallery;
     private long lastBitmap,cameraFrames;private int cameraGeneration;private int[] previousPixels;private long lastCamera;
     private final Runnable publish=new Runnable(){public void run(){
         if(stopped)return;
@@ -45,7 +46,7 @@ final class SensorHub {
         ui.postDelayed(this,150);
     }};
     SensorHub(Activity activity,TextureView texture,boolean mic,boolean cam,boolean tof,Output output){
-        this.activity=activity;this.texture=texture;this.output=output;
+        this.activity=activity;this.texture=texture;this.output=output;gallery=new Gallery(activity);
         micWanted=mic;cameraWanted=cam;tofWanted=tof;
         cameraThread.start();cameraHandler=new Handler(cameraThread.getLooper());
         if(mic){if(activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)new Thread(this::audioLoop,"BloubAudio").start();else micStatus="需要麦克风权限";}
@@ -150,7 +151,7 @@ final class SensorHub {
                                 s.setRepeatingRequest(r.build(),new CameraCaptureSession.CaptureCallback(){
                                     private boolean logged;
                                     public void onCaptureCompleted(CameraCaptureSession cs,CaptureRequest cr,TotalCaptureResult result){if(!logged){logged=true;Log.i("BloubSensors","CAMERA_EXPOSURE ns="+result.get(CaptureResult.SENSOR_EXPOSURE_TIME)+" iso="+result.get(CaptureResult.SENSOR_SENSITIVITY)+" duration="+result.get(CaptureResult.SENSOR_FRAME_DURATION));}}
-                                },cameraHandler);cameraStatus="本地观察 · 不保存画面";
+                                },cameraHandler);cameraStatus=gallery.enabled()?"本地观察 · 照片保留七天":"本地观察 · 不保存画面";
                             }catch(Exception e){cameraStatus="相机配置失败";closeCamera();}
                         }
                         public void onConfigureFailed(CameraCaptureSession s){cameraStatus="相机配置失败";closeCamera();}
@@ -166,7 +167,7 @@ final class SensorHub {
     private void observeFrame(){
         if(stopped||!cameraOn)return;cameraFrames++;
         long now=SystemClock.elapsedRealtime();if(processing||now-lastBitmap<450)return;
-        lastBitmap=now;processing=true;
+        lastBitmap=now;processing=true;final int observedGeneration=cameraGeneration;
         Bitmap source=texture.getBitmap(240,320);if(source==null){processing=false;return;}
         cameraHandler.post(()->{
             try{
@@ -177,7 +178,9 @@ final class SensorHub {
                 Bitmap gray=source.copy(Bitmap.Config.RGB_565,false);FaceDetector.Face[] found=new FaceDetector.Face[1];
                 faces=new FaceDetector(240,320,1).findFaces(gray,found);
                 if(faces>0&&found[0].confidence()>.35){PointF mid=new PointF();found[0].getMidPoint(mid);faceX=mid.x/240-.5f;faceY=mid.y/320-.5f;}else faces=0;
-                gray.recycle();Log.d("BloubSensors","CAMERA_FRAME faces="+faces+" motion="+motion);
+                gray.recycle();
+                if(!stopped&&cameraOn&&observedGeneration==cameraGeneration&&savedGeneration!=observedGeneration&&SystemClock.elapsedRealtime()-lastCamera>1600&&gallery.enabled()){gallery.save(source,faces,motion);savedGeneration=observedGeneration;}
+                Log.d("BloubSensors","CAMERA_FRAME faces="+faces+" motion="+motion);
             }catch(Throwable e){Log.w("BloubSensors","Camera analysis",e);}
             finally{source.recycle();processing=false;}
         });

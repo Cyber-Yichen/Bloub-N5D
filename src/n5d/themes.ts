@@ -1,6 +1,6 @@
 import { mixHex } from '../bot/skins'
 import { smooth } from './motion'
-import { DVD_HITS } from './dvd'
+import { dvdPlan } from './dvd'
 
 export interface Palette { paper:string; body:string; rim:string; amber:string; quiet:string }
 export const THEMES = [
@@ -25,13 +25,13 @@ export function luminance(hex:string):number {
 }
 
 /** Body-only temporary tint; never modifies the user's saved theme or the background. */
-export function dvdPalette(base:Palette,t:number,weight:number):Palette{
+export function dvdPalette(base:Palette,t:number,weight:number,seed=0,home={x:820,y:350}):Palette{
   if(weight<=0)return base
   const colors=luminance(base.paper)>.5
     ?['#b43c68','#2766ad','#227c59','#9a581d','#7450ac','#a43735']
     :['#f99bbc','#89c7ff','#8fddb4','#f5c481','#c6a8ff','#ffa697']
-  let from=base.body,target=base.body,at=-Infinity,index=0
-  for(const hit of DVD_HITS){
+  let from=base.body,target=base.body,at=-Infinity,index=(seed>>>0)%colors.length
+  for(const hit of dvdPlan(seed,home).hits){
     if(hit.at>t)break
     // A second wall can arrive before the preceding tint finishes; carry the real tint.
     from=mixHex(from,target,smooth((hit.at-at)/.18))

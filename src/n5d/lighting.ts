@@ -4,9 +4,10 @@ const channels=(hex:string)=>[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16))
 const gaussian=(distance:number,width:number)=>Math.exp(-.5*(distance/width)**2)
 /** Trails, waves and LEDs share world coordinates. RGB order is physical;
  * RingStudio handles BGR wiring. Bytes already contain effective intensity. */
-export function sampleLights(scene:Scene,palette:Palette){
+export function sampleLights(scene:Scene,palette:Palette,offset=0){
   const rgb:number[]=[],white:number[]=[]
-  const color=channels(palette.amber),cool=channels(palette.rim)
+  const peak=(hex:string)=>{const c=channels(hex),m=Math.max(...c);return c.map(v=>m?v*255/m:255)}
+  const color=peak(palette.amber),cool=peak(palette.rim)
   const energyAt=(x:number,y:number)=>{
     let warm=0,cold=0
     if(scene.trail>0){
@@ -26,10 +27,10 @@ export function sampleLights(scene:Scene,palette:Palette){
   // and white LEDs; feathered edges make the dark body travel without stepping.
   const shadowAt=(x:number,y:number)=>smooth((Math.hypot(x-scene.x,y-scene.y)-RING_TRIP.bodyRadius)/RING_TRIP.bodyRadius)
   for(let i=0;i<24;i++){
-    const p=ringPoint(i),[a,b]=energyAt(p.x,p.y)
-    for(let j=0;j<3;j++)rgb.push(trip?Math.round(color[j]!/255*48*shadowAt(p.x,p.y)):Math.round(Math.min(68,(color[j]!/255*a+cool[j]!/255*b)*68)))
-    const w=ringPoint(i,true),[wa,wb]=energyAt(w.x,w.y)
-    white.push(trip?Math.round(9*shadowAt(w.x,w.y)):Math.round(Math.min(22,(wa*.28+wb)*22)))
+    const p=ringPoint(i-offset/15),[a,b]=energyAt(p.x,p.y)
+    for(let j=0;j<3;j++)rgb.push(trip?Math.round(color[j]!*shadowAt(p.x,p.y)):Math.round(Math.min(255,(color[j]!/255*a+cool[j]!/255*b)*255)))
+    const w=ringPoint(i-offset/15,true),[wa,wb]=energyAt(w.x,w.y)
+    white.push(trip?Math.round(255*shadowAt(w.x,w.y)):Math.round(Math.min(255,(wa+wb)*255)))
   }
   return {active:scene.lightActive,mix:scene.lightMix,rgb,white}
 }

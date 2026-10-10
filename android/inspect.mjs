@@ -40,7 +40,7 @@ try{
     const evidence={ui:[],ring:[]}
     if(!await evaluate("Boolean(document.querySelector('.controls'))"))await evaluate("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))")
     await sleep(300)
-    for(const [i,name] of ['companion','senses','about'].entries()){
+    for(const [i,name] of ['companion','senses','gallery','about'].entries()){
       await evaluate("document.querySelectorAll('.dock-rail nav button')["+i+"].click()")
       await sleep(250);await capture('ui-'+name)
       const metrics=await evaluate("({body:document.querySelector('.dock-body').clientHeight,content:document.querySelector('.dock-body').scrollHeight,text:document.querySelector('h1').textContent})")
@@ -63,7 +63,7 @@ try{
       }).sort((a,b)=>a.d-b.d)[0].i
       const rgbIndex=nearest(false),whiteIndex=nearest(true),g=groups[rgbIndex]*3
       if(hardware.channels.slice(g,g+3).some(v=>v!==0)||hardware.channels[whites[whiteIndex]]!==0)throw Error('Black body was not dark in both LED banks')
-      if(whites.filter(i=>hardware.channels[i]===9).length<18)throw Error('Surrounding ring was not illuminated')
+      if(whites.filter(i=>hardware.channels[i]===255).length<18)throw Error('Surrounding ring was not illuminated')
       evidence.ring.push({t,rgbIndex,whiteIndex,scene:s,hardware});console.log(JSON.stringify({t,rgbIndex,whiteIndex,owner:hardware.owner}))
     }
     await evaluate("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))");await sleep(900)
@@ -74,6 +74,38 @@ try{
     await sleep(900);if(ring().external)throw Error('Trip did not restore local lights')
     writeFileSync(path.join(output,'v03-evidence.json'),JSON.stringify(evidence,null,2))
 
+  }else if(command==='random-dvd'){
+    if(await evaluate("Boolean(document.querySelector('.controls'))"))await evaluate("document.querySelector('.close').click()")
+    const starts=await evaluate(`(()=>{const starts=[];let last='';for(let t=0;t<2000;t++){window.n5dDebug.random(t);const s=window.n5dDebug.snapshot();if(s.episode==='dvd'&&last!=='dvd')starts.push(t);last=s.episode;if(starts.length===2)break}return starts})()`)
+    if(starts.length!==2)throw Error('Missing random DVD episodes')
+    await evaluate("window.n5dDebug.random("+starts[0]+")")
+    await sleep(150)
+    const original=await evaluate('window.n5dDebug.snapshot()'),samples=[]
+    let restored=false
+    const deadline=Date.now()+30000
+    while(Date.now()<deadline){
+      const v=await evaluate("({s:window.n5dDebug.snapshot(),transform:document.querySelector('.companion-position').style.transform,fill:document.querySelector('.avatar path[mask]').getAttribute('fill')})")
+      const s=v.s
+      if(s.episode==='dvd'){
+        if(ring().external)throw Error('Random DVD owns the ring')
+        const p=v.transform.match(/translate\(([-.\d]+)px,\s*([-.\d]+)px\)/)
+        if(!p||Math.hypot(Number(p[1])-s.x,Number(p[2])-s.y)>.01||v.fill!==s.bodyColor)throw Error('Random DVD render mismatch')
+        samples.push(v)
+      }else{
+        if(s.dvd!==0||Math.hypot(s.x-original.homeX,s.y-original.homeY)>3)throw Error('Random DVD did not return to its own home')
+        restored=true;break
+      }
+      await sleep(250)
+    }
+    if(!restored)throw Error('Random DVD did not finish')
+    await evaluate("window.n5dDebug.random("+starts[1]+")")
+    const second=await evaluate('window.n5dDebug.snapshot()')
+    if(original.variant===second.variant||original.homeX===second.homeX&&original.homeY===second.homeY)throw Error('Repeated DVD variant')
+    await evaluate("window.n5dDebug.random("+ (starts[1]+5) +")")
+    await sleep(300)
+    const secondFlying=await evaluate('window.n5dDebug.snapshot()')
+    writeFileSync(path.join(output,'random-dvd-evidence.json'),JSON.stringify({original,samples,second,secondFlying,restored},null,2))
+    console.log(JSON.stringify({samples:samples.length,colors:new Set(samples.map(v=>v.s.bodyColor)).size,restored,homes:[[original.homeX,original.homeY],[second.homeX,second.homeY]],variants:[original.variant,second.variant]}))
   }else if(command==='dvd'){
     if(await evaluate("Boolean(document.querySelector('.controls'))"))await evaluate("document.querySelector('.close').click()")
     await evaluate("window.n5dDebug.seek(277.5);window.n5dDebug.resume()")

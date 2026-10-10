@@ -7,7 +7,7 @@ import { SHAPE_BY_ID,type ShapeId } from '../bot/skins'
 import { mixHex } from '../bot/skins'
 import { luminance, type Palette } from './themes'
 
-const props = defineProps<{ time: number; local:number; shape:ShapeId; state: StateId; expression: ExpressionId; yaw: number; pitch: number; palette:Palette }>()
+const props = defineProps<{ time: number; local:number; shape:ShapeId; state: StateId; expression: ExpressionId; yaw: number; pitch: number; palette:Palette; lockLook?:boolean }>()
 const silhouette=ref<SVGPathElement|null>(null)
 let hitCanvas:CanvasRenderingContext2D|null=null
 function hitTest(clientX:number,clientY:number){
@@ -34,7 +34,7 @@ watch(() => props.time, (t) => {
   engine.setShape(SHAPE_BY_ID.get(props.shape)!.radii,t)
   engine.setState(props.state,t)
   engine.setExpression(EXPRESSION_BY_ID.get(props.expression)!,t)
-  engine.setLook(STATE_BY_ID.get(props.state)?.baseFace?{yaw:props.yaw,pitch:props.pitch,mix:1,spin:0,wander:.5}:null,t,.35)
+  engine.setLook((props.lockLook||STATE_BY_ID.get(props.state)?.baseFace)?{yaw:props.yaw,pitch:props.pitch,mix:1,spin:0,wander:.5}:null,t,.35)
   frame.value=engine.sample(t)
   triggerRef(frame)
 }, { immediate: true })

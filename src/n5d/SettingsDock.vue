@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import GalleryDock from './GalleryDock.vue'
 import { ref } from 'vue'
 import { THEMES,type ThemeId } from './themes'
 import type { SensorData } from './reactions'
 import { PROJECT } from './project'
 defineProps<{calm:boolean;lights:boolean;brightness:number;theme:ThemeId;mic:boolean;camera:boolean;tof:boolean;sensors:SensorData;status:string;native:boolean}>()
-const emit=defineEmits<{close:[];calm:[];lights:[];brightness:[value:number];theme:[id:ThemeId];sensor:[id:'mic'|'camera'|'tof'];ring:[];project:[]}>()
-const tab=ref<'companion'|'senses'|'about'>('companion')
+const emit=defineEmits<{calibrate:[];close:[];calm:[];lights:[];brightness:[value:number];theme:[id:ThemeId];sensor:[id:'mic'|'camera'|'tof'];ring:[];project:[]}>()
+const tab=ref<'companion'|'senses'|'gallery'|'about'>('companion')
 </script>
 <template>
   <section class="controls" role="dialog" aria-modal="true" aria-label="Bloub 桌边设置" @pointerdown.stop @pointerup.stop>
@@ -24,14 +25,15 @@ const tab=ref<'companion'|'senses'|'about'>('companion')
       <nav aria-label="设置分类">
         <button :aria-current="tab==='companion'?'page':undefined" @click="tab='companion'"><span>陪伴</span><small>动作与配色</small></button>
         <button :aria-current="tab==='senses'?'page':undefined" @click="tab='senses'"><span>感知</span><small>听听 · 看看 · 靠近</small></button>
+        <button :aria-current="tab==='gallery'?'page':undefined" @click="tab='gallery'"><span>图库</span><small>本机观察 · 保留七天</small></button>
         <button :aria-current="tab==='about'?'page':undefined" @click="tab='about'"><span>关于</span><small>版本与开源项目</small></button>
       </nav>
       <span class="rail-version">N5D · v{{ PROJECT.version }}</span>
     </aside>
     <div class="dock-content">
       <header class="dock-head">
-        <div><span class="eyebrow">{{ tab==='about'?'BLOUB / OPEN SOURCE':tab==='senses'?'BLOUB / SENSES':'BLOUB / COMPANION' }}</span>
-          <h1>{{ tab==='about'?'一个会探索的桌边伙伴':tab==='senses'?'让它感受桌边的动静':'按你的节奏陪伴' }}</h1>
+        <div><span class="eyebrow">{{ tab==='about'?'BLOUB / OPEN SOURCE':tab==='gallery'?'BLOUB / GALLERY':tab==='senses'?'BLOUB / SENSES':'BLOUB / COMPANION' }}</span>
+          <h1>{{ tab==='about'?'一个会探索的桌边伙伴':tab==='gallery'?'它眼里的工位':tab==='senses'?'让它感受桌边的动静':'按你的节奏陪伴' }}</h1>
         </div>
         <button class="close" @click="emit('close')" aria-label="收起设置">×</button>
       </header>
@@ -39,7 +41,7 @@ const tab=ref<'companion'|'senses'|'about'>('companion')
         <div class="settings-row">
           <button class="setting-card" :aria-pressed="!calm" @click="emit('calm')">
             <span>陪伴方式</span><strong>{{ calm?'安静陪伴':'自由探索' }}</strong>
-            <small>{{ calm?'留在身边，轻轻呼吸':'变形、钻洞，偶尔去灯环玩' }}</small>
+            <small>{{ calm?'留在身边，轻轻呼吸':'随机探索，偶尔去灯环玩' }}</small>
           </button>
           <button class="setting-card" :aria-pressed="lights" @click="emit('lights')">
             <span>灯环互动 <i class="switch" :class="{on:lights}"/></span><strong>{{ lights?'让小影子去转两圈':'只在屏幕里玩' }}</strong>
@@ -53,7 +55,7 @@ const tab=ref<'companion'|'senses'|'about'>('companion')
           </button>
           <button :aria-pressed="theme==='auto'" @click="emit('theme','auto')"><i class="auto-swatch">↻</i><span>自动轮换</span></button>
         </div>
-        <label class="brightness"><span>屏幕亮度</span><input :value="brightness" type="range" min="15" max="75" aria-label="屏幕亮度" @input="emit('brightness',Number(($event.target as HTMLInputElement).value))"/><b>{{ brightness }}%</b></label>
+        <label class="brightness"><span>屏幕亮度</span><input :value="brightness" type="range" min="15" max="100" aria-label="屏幕亮度" @input="emit('brightness',Number(($event.target as HTMLInputElement).value))"/><b>{{ brightness }}%</b></label>
       </div>
       <div v-else-if="tab==='senses'" class="dock-body">
         <p class="section-description">需要时打开，用完随时关闭。</p>
@@ -62,8 +64,9 @@ const tab=ref<'companion'|'senses'|'about'>('companion')
           <button :disabled="!native" :aria-pressed="camera" @click="emit('sensor','camera')"><div><strong>偶尔看看</strong><span>每两分钟看看周围五秒，跟随动静和脸的方向。</span><small>{{ native?sensors.cameraStatus:'在 N5D 上开启相机' }}</small></div><i class="switch" :class="{on:camera}"/></button>
           <button :disabled="!native" :aria-pressed="tof" @click="emit('sensor','tof')"><div><strong>靠近感应</strong><span>把手靠近灯环中间，它会探头打个招呼。</span><small>{{ sensors.distance>=0?sensors.distance+' mm':native?sensors.tofStatus:'在 N5D 上连接距离传感器' }}</small></div><i class="switch" :class="{on:tof}"/></button>
         </div>
-        <p class="privacy-note">声音和画面只在本机内存分析，不保存、不上传。切到后台即停止感知。</p>
+        <p class="privacy-note">声音在本机内存分析；开启“保存观察”后照片进入本机图库，保留七天，不上传。切到后台停止感知。</p>
       </div>
+      <div v-else-if="tab==='gallery'" class="dock-body"><GalleryDock/></div>
       <div v-else class="dock-body about-body">
         <div class="about-intro"><span class="version-pill">v{{ PROJECT.version }} · MIT</span><p>Bloub 会变形、躲进小窝、吞下泡泡，<br/>也会化成灯环上的黑色影子，转两圈再回来。</p></div>
         <button class="github-card" @click="emit('project')" aria-label="打开 Bloub-N5D GitHub 项目"><span><strong>GitHub 开源项目</strong><small>Cyber-Yichen / Bloub-N5D</small></span><b>↗</b></button>
@@ -71,7 +74,7 @@ const tab=ref<'companion'|'senses'|'about'>('companion')
         <div class="credits"><div><span>动画核心</span><strong>Jérémy Perret / Bloub</strong><small>MIT · github.com/jeremy-prt/bloub</small></div><div><span>实体灯环</span><strong>N5D RingStudio</strong><small>公共控制接口 · 独立管理灯光</small></div><div><span>音乐感知</span><strong>YAMNet / TensorFlow Lite</strong><small>Apache 2.0 · 本机处理</small></div></div>
         <p class="about-note">按 N5D 的屏幕、挖孔和灯环尺寸制作。点空白看过去，拖动目光跟随；轻触打招呼，长按设置。</p>
       </div>
-      <footer class="panel-foot"><p role="status">{{ status }}</p><button v-if="native" class="link" @click="emit('ring')">灯环工坊 ↗</button><span v-else>1600 × 720</span></footer>
+      <footer class="panel-foot"><p role="status">{{ status }}</p><div class="panel-tools"><button v-if="tab==='companion'" class="link" @click="emit('calibrate')">灯环位置校准 ↗</button><button v-if="native" class="link" @click="emit('ring')">灯环工坊 ↗</button><span v-else>1600 × 720</span></div></footer>
     </div>
   </section>
 </template>
