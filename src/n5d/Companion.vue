@@ -12,7 +12,7 @@ import { reactScene,emptySensors,type SensorData } from './reactions'
 import { GEOMETRY, sampleScene, externalPose, smooth, type Scene, type CompanionState } from './scene'
 import { paletteAt, blendPalette, dvdPalette, type ThemeId, type Palette } from './themes'
 
-interface NativeBridge { frame(json: string): void; sensors(mic:boolean,camera:boolean,tof:boolean):void; enableLights(on: boolean): void; brightness(value: number): void; ready(): void; galleryList(before:number):string;galleryEnabled(value:boolean):void;galleryDelete(id:string):boolean;galleryClear():void;openRingStudio(): void; openProject():void }
+interface NativeBridge { frame(json: string): void; sensors(mic:boolean,camera:boolean,tof:boolean):void; enableLights(on: boolean): void; brightness(value: number): void; ready(): void; galleryList(before:number):string;galleryServerInfo():string;galleryServerEnabled(value:boolean):void;copyGalleryAddress():void;cameraInfo():string;cameraSource(id:string):void;quietHours(start:number,end:number):void;galleryEnabled(value:boolean):void;galleryDelete(id:string):boolean;galleryClear():void;openRingStudio(): void; openProject():void }
 declare global { interface Window {
   N5D?: NativeBridge;
   n5dStatus?: (code:string) => void;
@@ -28,9 +28,14 @@ const ringOnline=ref(false),ringBlend=ref(0)
 const calm = ref(load('n5d.calm',String(reduced))==='true')
 const lights = ref(load('n5d.lights','true')==='true')
 const mic=ref(load('n5d.mic','false')==='true'),camera=ref(load('n5d.camera','false')==='true'),tof=ref(load('n5d.tof','false')==='true')
+const cameraId=ref(load('n5d.cameraId','2'))
+const quietStart=ref(load('n5d.quietStart','23:00')),quietEnd=ref(load('n5d.quietEnd','08:00'))
+const minutes=(time:string)=>Number(time.slice(0,2))*60+Number(time.slice(3,5))
+function changeQuietHours(start:string,end:string){if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(start)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(end))return;quietStart.value=start;quietEnd.value=end;save('n5d.quietStart',start);save('n5d.quietEnd',end);window.N5D?.quietHours(minutes(start),minutes(end))}
+function changeCamera(id:string){if(id!=='2'&&id!=='3')return;cameraId.value=id;save('n5d.cameraId',id);window.N5D?.cameraSource(id)}
 const sensorData=ref<SensorData>({...emptySensors}),musicStrength=ref(0),nearStrength=ref(0)
 let sensorAt=-10000,lastHello=-10000
-function configureSensors(){for(const [key,value] of [['mic',mic.value],['camera',camera.value],['tof',tof.value]] as const)save('n5d.'+key,String(value));window.N5D?.sensors(mic.value,camera.value,tof.value)}
+function configureSensors(){window.N5D?.quietHours(minutes(quietStart.value),minutes(quietEnd.value));window.N5D?.cameraSource(cameraId.value);for(const [key,value] of [['mic',mic.value],['camera',camera.value],['tof',tof.value]] as const)save('n5d.'+key,String(value));window.N5D?.sensors(mic.value,camera.value,tof.value)}
 function toggleSensor(kind:'mic'|'camera'|'tof'){const option={mic,camera,tof}[kind];option.value=!option.value;configureSensors()}
 
 const savedTheme=load('n5d.theme','paper')
@@ -207,9 +212,9 @@ onBeforeUnmount(()=>{cancelAnimationFrame(raf);clearTimeout(hold);clearTimeout(h
       <Transition name="fade"><p v-if="hint&&!panel" class="hint" :style="{color:palette.quiet}">点空白看过去 · 轻触打招呼 · 长按设置</p></Transition>
       <Transition name="panel">
         <SettingsDock v-if="panel" :calm="calm" :lights="lights" :brightness="brightness" :theme="theme"
-          :mic="mic" :camera="camera" :tof="tof" :sensors="sensorData" :status="status" :native="!!native"
+          :quiet-start="quietStart" :quiet-end="quietEnd" :mic="mic" :camera="camera" :camera-id="cameraId" :tof="tof" :sensors="sensorData" :status="status" :native="!!native"
           @close="panel=false;closeCalibration()" @calibrate="calibration=true" @calm="toggleCalm" @lights="toggleLights" @brightness="changeBrightness"
-          @theme="setTheme" @sensor="toggleSensor" @ring="native?.openRingStudio()" @project="openProject"/>
+          @theme="setTheme" @sensor="toggleSensor" @quiet-hours="changeQuietHours" @camera-source="changeCamera" @ring="native?.openRingStudio()" @project="openProject"/>
       </Transition>
       <RingCalibration v-if="panel&&calibration" :offset="ringOffset" @offset="setOffset" @test="testRing" @close="closeCalibration"/>
     </div>

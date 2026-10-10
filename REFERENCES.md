@@ -21,6 +21,7 @@
 
 | 项目 | 参考内容 | 引入情况 |
 | --- | --- | --- |
+| [pedroSG94/RootEncoder](https://github.com/pedroSG94/RootEncoder) | Android 相机与视频编码方案；支持 RTMP / RTSP / SRT 等传输 | 仅调研，未导入其代码或依赖；本版采用原生 Camera2 与直接浏览器 MJPEG，独立编码线程发送最新帧 |
 | [iduu/grokbot-animation](https://github.com/iduu/grokbot-animation) | 完整动作生命周期、共享时钟、状态与形状分离 | 仅调研。其 README 明确第三方参考素材未获开源许可；本项目未导入其数据包、素材或运行时 |
 | [nasawz/GrokBot](https://github.com/nasawz/GrokBot) | Flutter 头像中的表情节奏与随机池 | 仅调研，未引入 Flutter 代码或运行时；仓库标注 BSD-3-Clause |
 | [Eyadkelleh/Grok_bot](https://github.com/Eyadkelleh/Grok_bot) | SVG 动作工作室与 Bloub 状态展示 | 仅作为展示参考，未并入代码或素材；不对其许可作未经核实的声明 |
