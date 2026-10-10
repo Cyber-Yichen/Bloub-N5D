@@ -43,6 +43,11 @@ final class SeatMonitor {
     learner.label(label,latest);timeline.pause();message=learner.ready()?"已完成校准，开始适应工位":learner.emptyLabels>0&&learner.occupiedLabels>0?"两种画面太接近，请调整座位区域":"已记住"+(label==0?"空位":"在位")+"，再确认另一种";persist();
     return new JSONObject().put("accepted",true).put("message",message).toString();
   }catch(JSONException e){return "{}";}}
+  synchronized JSONObject annotation(long wall,long mono){try{
+    long age=latestAt==0?Long.MAX_VALUE:Math.max(0,mono-latestAt);int state=active&&enabled&&learner.ready()?timeline.current(mono):-1;
+    java.text.SimpleDateFormat iso=new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX",Locale.US);
+    return new JSONObject().put("schemaVersion",2).put("capturedAt",wall).put("capturedAtIso",iso.format(new java.util.Date(wall))).put("captureUptime",mono).put("timezone",TimeZone.getDefault().getID()).put("seatState",state==1?"occupied":state==0?"empty":"unknown").put("annotationSource","model_estimate").put("manualGroundTruth",false).put("observedAt",lastWall).put("observationAgeMs",latestAt==0?JSONObject.NULL:age).put("personScore",age<=60000?personScore:JSONObject.NULL).put("calibrated",learner.ready()).put("roi",array(roi)).put("model","EfficientDet-Lite0");
+  }catch(JSONException e){return new JSONObject();}}
   String frame(){return preview;}
   synchronized boolean reserve(long now){if(!active||busy||(!enabled&&!previewing()&&!detecting())||now-lastInference<(detecting()?500:previewing()?2000:18000))return false;busy=true;lastInference=now;return true;}
   void cancelFrame(){busy=false;}

@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.cyberyichen.bloub" android:versionCode="9" android:versionName="0.8.0">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.cyberyichen.bloub" android:versionCode="10" android:versionName="0.9.0">
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.RECORD_AUDIO"/>
   <uses-permission android:name="android.permission.CAMERA"/>
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
   <uses-feature android:name="android.hardware.camera" android:required="false"/>
   <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="27"/>
-  <application android:label="Bloub 桌边" android:icon="@drawable/icon" android:allowBackup="false" android:hardwareAccelerated="true" android:debuggable="true" android:theme="@android:style/Theme.Material.NoActionBar">
+  <application android:label="Bloub 桌边" android:icon="@mipmap/icon" android:roundIcon="@mipmap/icon" android:allowBackup="false" android:hardwareAccelerated="true" android:debuggable="true" android:theme="@android:style/Theme.Material.NoActionBar">
     <receiver android:name=".GalleryCleanupReceiver" android:exported="false"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/></intent-filter></receiver>
     <activity android:name=".MainActivity" android:screenOrientation="landscape" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="true">
       <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>

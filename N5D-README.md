@@ -1,4 +1,4 @@
-# Bloub 桌边 · 0.8.0 使用与构建
+# Bloub 桌边 · 0.9.0 使用与构建
 
 项目：[Cyber-Yichen/Bloub-N5D](https://github.com/Cyber-Yichen/Bloub-N5D)。上游基线 b4bb3c1b5f93c7b87a2e8d620f667c4093d97749，保留 MIT 许可。
 
@@ -25,13 +25,13 @@
 
 ## 新的两圈动画
 
-环的光带中线半径 32.8 mm。Bot 在 156–176 s 以约 **20.6 mm/s** 转两圈，每圈 10 s。飞入、圆周、飞出共用一个时钟和整机坐标，交接匹配位置、切线速度和向心加速度。
+环的光带中线半径 32.8 mm。Bot 在 156–176 s 以约 **27.5 mm/s** 逆时针旋转：七点进入，完成两圈后继续至十一点，20 秒转过 8/3 圈，每整圈 7.5 秒。飞入、圆周、飞出共用一个时钟和整机坐标，交接匹配位置、切线速度和向心加速度。
 
 Bot 在环上表现为黑色缺口：周围点亮，缺口核心同时关闭交错的 RGB 和白灯，边缘逐渐变暗。屏幕与灯环之间的实体间隔按实测保留，不把动画压缩到屏幕边缘。
 
 ## 灯环 API
 
-依赖 [RingStudio 公共 API v1](https://github.com/Cyber-Yichen/N5D-RingStudio/blob/main/docs/control-api.md)。开启工坊“关于”中的其他应用控制。每次仅在随机选中的灯环转圈或光波片段内请求会话（标准诊断时间轴为 149–187 s、219–240 s），以 10 fps 完整帧续租，10 s 租约。
+依赖 [RingStudio 公共 API v1](https://github.com/Cyber-Yichen/N5D-RingStudio/blob/main/docs/control-api.md)。开启工坊“关于”中的其他应用控制。每次仅在随机选中的灯环转圈或光波片段内请求会话（标准诊断时间轴为 149–187 s、219–240 s），以约 15 fps 完整帧续租（随实际绘制调度变化），10 s 租约。
 
 退出互动或切后台 RELEASE(resume_local=true)，恢复工坊原效果、Logo 与设置；超过 1.8 s 没有新帧也释放。接管和归还前渐变。24 RGB / 24 白灯以物理顺序生成，白灯偏 7.5°，工坊处理 BGR 接线。检查映射 ID n5d-clockwise-2026-10；忙碌或失去所有权时本段故事不会反复抢占。
 
@@ -65,7 +65,7 @@ pnpm test
 
 需要 JDK 11、Python 3、Android platform 23、aapt、zipalign、apksigner。build.sh 默认使用 Linux 系统工具；可用 ANDROID_JAR、JAVA_HOME、R8_JAR 指定路径，并把所需 Android build-tools 加入 PATH。
 
-先下载固定模型及运行时：
+Java 仍使用 platform 23 编译；自适应图标资源使用固定的官方 platform 27 archive，由构建脚本提取 android.jar。先下载固定模型及运行时、资源 SDK：
 ```bash
 python3 android/fetch-dependencies.py
 bash android/build.sh
@@ -76,7 +76,7 @@ WSL 网络不可用时，可以在同一个 checkout 通过 Windows 下载，再
 powershell -ExecutionPolicy Bypass -File android/fetch-model.ps1
 ```
 
-每个依赖的来源、版本和 SHA256 固定在 android/dependencies.json 与 android/dependencies.sha256。构建前验证哈希；输出 android/dist/Bloub-N5D-0.8.0.apk 和 SHA256SUMS.txt。minSdk23、targetSdk27，打包 arm64-v8a TFLite。
+每个依赖的来源、版本和 SHA256 固定在 android/dependencies.json 与 android/dependencies.sha256。构建前验证哈希；输出 android/dist/Bloub-N5D-0.9.0.apk 和 SHA256SUMS.txt。minSdk23、targetSdk27，打包 arm64-v8a TFLite。
 
 开发签名密钥会在本机 android/toolchain/development.jks 自动生成，不提交。不同人的本地开发签名不同；发布包使用维护者的同一签名。产物、工具链、模型下载缓存、设备诊断报告均按 .gitignore 排除；模型与附带许可作为明确的运行资源保留。
 
@@ -141,3 +141,19 @@ MJPEG 改为独立编码线程和最新帧发送；读取纹理、帧差与编�
 设置新增工位页。开启相机后，选择座位区域并确认空位、在位，再开启工位观察。内置 EfficientDet-Lite0 量化人体检测模型，设备本地 CPU 推理；固定模型加有限度在线原型学习。每约二十秒短时观察，连续确认后才计时，后台、暗光、采样中断和时间跳变不补算在位。设备与网页显示全天时间轴和七天时长图，统计保留九十天。
 
 网页实时画面新增检测框开关，框、类别和置信度画入 MJPEG，识别与编码独立调度。API、校准和估算边界见 [工位统计文档](docs/presence-api.md)。
+
+## 图库、设置与监控 · 0.9
+
+网页新增日期与时间段、工位状态筛选及对应 ZIP 导出；设置页同步设备陪伴、感知、拍摄和连接选项。新照片的拍摄时间、模型确认状态、观察年龄与区域同时存入 JPEG XMP 和 JSON，历史无标签照片为未知。有人默认一分钟拍一张，无人十分钟，未知两分钟，三个间隔都可调整；自动拍照仍遵守夜间休息时间。
+
+确认座位有人时会醒来打招呼、左右探看、拍照时拿出矢量相机；确认无人后完成当前故事再回家睡觉，减少活动。只有白底黑色主题会抽取挖孔与泡泡故事，其他主题跳过这些段落。灯环从七点逆时针进入、十一点退出，缺口边缘羽化；宽回波推动 Bloub 并带出惊讶符号。
+
+监控默认关闭，设备图库提供开关；网页「监控」设置无声录像分段、容量预算、保留期与 WebDAV / S3 / OSS / COS 上传。具体 NAS 连接方式、失败重试、边界和 API 见 [监控文档](docs/monitor-api.md)。
+
+离线 Java 核心校验：
+
+```bash
+mkdir -p android/build/test
+javac -encoding UTF-8 -d android/build/test android/src/com/cyberyichen/bloub/{UploadSigner,PhotoAnnotation,WebDavFolders}.java android/test/com/cyberyichen/bloub/StorageCoreTest.java
+java -Djava.awt.headless=true -cp android/build/test com.cyberyichen.bloub.StorageCoreTest
+```

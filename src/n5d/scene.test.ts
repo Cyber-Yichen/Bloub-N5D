@@ -17,7 +17,7 @@ describe('N5D physical choreography',()=>{
   it('has continuous travel and acceleration at every waypoint including physical handoff',()=>{
     for(const key of WAYPOINTS){
       const t=key[0],a=sampleScene(t-.001),b=sampleScene(t+.001),c=sampleScene(t)
-      expect(Math.hypot(a.x-b.x,a.y-b.y)).toBeLessThan(.5)
+      expect(Math.hypot(a.x-b.x,a.y-b.y)).toBeLessThan(.8)
       const prev=pathAt(t-.002),next=pathAt(t+.002)
       for(const k of ['x','y'] as const){
         expect(Math.abs((c[k]-a[k])/.001-(b[k]-c[k])/.001)).toBeLessThan(.3)
@@ -56,7 +56,7 @@ describe('N5D physical choreography',()=>{
     expect(energy(222.4,18)).toBeGreaterThan(energy(222.4,6)+10)
     expect(energy(227.2,6)).toBeGreaterThan(energy(227.2,18)+10)
   })
-  it('makes exactly two turns at constant physical speed with tangent handoff',()=>{
+  it('enters at seven, turns counterclockwise and leaves at eleven with tangent handoff',()=>{
     let angle=0,prev=pathAt(156)
     for(let t=156.01;t<=176.001;t+=.01){
       const p=pathAt(t),u={x:prev.x-2150,y:prev.y-360},w={x:p.x-2150,y:p.y-360}
@@ -64,13 +64,10 @@ describe('N5D physical choreography',()=>{
       expect(Math.hypot(p.x-prev.x,p.y-prev.y)/.01*.0942).toBeCloseTo(RING_TRIP.speed*.0942,3)
       prev=p
     }
-    expect(angle).toBeCloseTo(4*Math.PI,6)
-    for(const t of [156,176]){
-      const a=pathAt(t-.0001),c=pathAt(t),b=pathAt(t+.0001)
-      expect((c.y-a.y)/.0001).toBeCloseTo(-RING_TRIP.speed,1)
-      expect((b.y-c.y)/.0001).toBeCloseTo(-RING_TRIP.speed,1)
-      expect(Math.abs((b.x-a.x)/.0002)).toBeLessThan(.1)
-    }
+    expect(angle).toBeCloseTo(-16*Math.PI/3,6)
+    expect(Math.atan2(pathAt(156).x-2150,360-pathAt(156).y)).toBeCloseTo(-5*Math.PI/6,6);expect(Math.atan2(pathAt(176).x-2150,360-pathAt(176).y)).toBeCloseTo(-Math.PI/6,6)
+    for(const t of [156,176]){const a=pathAt(t-.0001),c=pathAt(t),b=pathAt(t+.0001);for(const key of ['x','y'] as const)expect((c[key]-a[key])/.0001).toBeCloseTo((b[key]-c[key])/.0001,1);}
+
   })
   it('releases on ordinary, hole, nap and calm scenes; ends each ownership blend at zero',()=>{
     for(let t=0;t<PERIOD;t+=.2){

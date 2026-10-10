@@ -5,11 +5,12 @@ interface Photo {id:string;capturedAt:number;faces:number;motion:number;url:stri
 interface Lan {enabled:boolean;running:boolean;url:string;key:string;error:string}
 const native=!!window.N5D
 const photos=ref<Photo[]>([]),selected=ref<Photo|null>(null),photoZoom=ref(1),mode=ref<'photos'|'lan'>('photos')
+const monitorEnabled=ref(false)
 const enabled=ref(true),total=ref(0),next=ref(0),cursor=ref(0),history=ref<number[]>([]),error=ref('')
 const lan=ref<Lan>({enabled:false,running:false,url:'',key:'',error:''})
 const date=(t:number)=>new Date(t).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
 function refresh(){
-  try{const data=JSON.parse(window.N5D?.galleryList(cursor.value)??'{"items":[],"total":0,"enabled":false}');photos.value=data.items??[];enabled.value=data.enabled;total.value=data.total;next.value=data.nextBefore??0;error.value='';if(native)lan.value=JSON.parse(window.N5D!.galleryServerInfo())}catch{error.value='图库暂时无法读取'}
+  try{const data=JSON.parse(window.N5D?.galleryList(cursor.value)??'{"items":[],"total":0,"enabled":false}');photos.value=data.items??[];enabled.value=data.enabled;total.value=data.total;next.value=data.nextBefore??0;error.value='';if(native){lan.value=JSON.parse(window.N5D!.galleryServerInfo());monitorEnabled.value=JSON.parse(window.N5D!.monitorInfo()).enabled;}}catch{error.value='图库暂时无法读取'}
 }
 function toggle(){enabled.value=!enabled.value;window.N5D?.galleryEnabled(enabled.value)}
 function open(photo:Photo){photoZoom.value=1;selected.value=photo}
@@ -17,6 +18,7 @@ function remove(){if(selected.value){window.N5D?.galleryDelete(selected.value.id
 function clear(){if(confirm('删除图库中的全部观察照片？')){window.N5D?.galleryClear();cursor.value=0;history.value=[];refresh()}}
 function page(forward:boolean){if(forward){history.value.push(cursor.value);cursor.value=next.value}else cursor.value=history.value.pop()??0;refresh()}
 function copyAddress(){window.N5D?.copyGalleryAddress()}
+function toggleMonitor(){window.N5D?.monitorEnabled(!monitorEnabled.value);setTimeout(refresh,300)}
 function toggleLan(){window.N5D?.galleryServerEnabled(!lan.value.enabled);setTimeout(refresh,300)}
 function key(e:KeyboardEvent){if(selected.value&&e.key==='Escape'){selected.value=null;e.stopImmediatePropagation();e.preventDefault()}}
 let timer=0
@@ -25,7 +27,7 @@ onBeforeUnmount(()=>{clearInterval(timer);window.removeEventListener('keydown',k
 </script>
 <template>
   <div class="gallery-dock">
-    <div class="gallery-toolbar"><span>{{ total }} 张</span><button :disabled="!native" :aria-pressed="enabled" @click="toggle">保存观察 <i class="switch" :class="{on:enabled}"/></button><button class="danger" :disabled="!total" @click="clear">清空图库</button></div>
+    <div class="gallery-toolbar"><span>{{ total }} 张</span><button :disabled="!native" :aria-pressed="enabled" @click="toggle">保存观察 <i class="switch" :class="{on:enabled}"/></button><button :disabled="!native" :aria-pressed="monitorEnabled" @click="toggleMonitor">监控 <i class="switch" :class="{on:monitorEnabled}"/></button><button class="danger" :disabled="!total" @click="clear">清空图库</button></div>
     <nav class="gallery-tabs" aria-label="图库功能"><button :aria-pressed="mode==='photos'" @click="mode='photos'">照片</button><button :aria-pressed="mode==='lan'" @click="mode='lan'">电脑下载</button></nav>
     <p v-if="error">{{ error }}</p>
     <template v-else-if="mode==='photos'">

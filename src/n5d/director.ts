@@ -7,12 +7,14 @@ export class PetDirector{
   constructor(private seed:number){this.reset()}
   private reset(){this.state=this.seed|0;this.bag=[];this.jobs=[{start:0,end:8,kind:'rest',home:{x:820,y:350},from:{x:820,y:350},variant:0}];this.home={x:820,y:350};this.last=null;this.lightAt=-1000}
   private random(){this.state=(Math.imul(this.state,1664525)+1013904223)|0;return (this.state>>>0)/4294967296}
-  private append(){
-    if(!this.bag.length)this.bag=Object.keys(CLIPS) as Clip[]
+  private append(allowHole=true){
+    const available=(Object.keys(CLIPS) as Clip[]).filter(k=>allowHole||(k!=="hole"&&k!=="bubbles"))
+    if(!this.bag.some(k=>available.includes(k)))this.bag=available
+    const pool=this.bag.filter(k=>available.includes(k))
     const time=this.jobs[this.jobs.length-1]!.end
-    let eligible=this.bag.filter(k=>k!==this.last&&(!(k==='ring'||k==='wave')||time-this.lightAt>35))
-    if(!eligible.length)eligible=this.bag.filter(k=>k!==this.last)
-    if(!eligible.length)eligible=this.bag
+    let eligible=pool.filter(k=>k!==this.last&&(!(k==='ring'||k==='wave')||time-this.lightAt>35))
+    if(!eligible.length)eligible=pool.filter(k=>k!==this.last)
+    if(!eligible.length)eligible=pool
     const kind=eligible[Math.floor(this.random()*eligible.length)]!
     this.bag.splice(this.bag.indexOf(kind),1)
     const home=kind==='wave'?{x:820,y:350}:{x:Math.round(640+this.random()*430),y:Math.round(310+this.random()*80)}
@@ -23,9 +25,9 @@ export class PetDirector{
     if(kind==='ring'||kind==='wave')this.lightAt=time+rest+b-a
     this.home=home;this.last=kind
   }
-  sample(seconds:number,calm=false):Scene{
+  sample(seconds:number,calm=false,allowHole=true):Scene{
     if(seconds<this.jobs[0]!.start)this.reset()
-    while(this.jobs[this.jobs.length-1]!.end<=seconds)this.append()
+    while(this.jobs[this.jobs.length-1]!.end<=seconds)this.append(allowHole)
     while(this.jobs.length>1&&this.jobs[0]!.end<=seconds)this.jobs.shift()
     const job=this.jobs[0]!
     if(calm)return {...sampleScene(seconds,true,this.seed),episode:'rest'}
@@ -33,6 +35,7 @@ export class PetDirector{
       const base=sampleScene(0,false,job.variant,job.home,seconds),u=smooth((seconds-job.start)/4)
       return {...base,x:job.from.x+(job.home.x-job.from.x)*u,y:job.from.y+(job.home.y-job.from.y)*u,shape:shapeAt(seconds,this.seed),episode:'rest'}
     }
+    if(!allowHole&&(job.kind==='hole'||job.kind==='bubbles'))return {...sampleScene(0,false,job.variant,job.home,seconds),episode:'rest'}
     return {...sampleScene(CLIPS[job.kind][0]+seconds-job.start,false,job.variant,job.home,seconds),episode:job.kind}
   }
   get bufferedJobs(){return this.jobs.length}

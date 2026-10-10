@@ -18,17 +18,19 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..')
 const output=path.join(root,'n5d-reports','gallery',new Date().toISOString().replace(/[:.]/g,'-'))
 mkdirSync(output,{recursive:true})
 const names=run('shell','run-as',app,'ls','-1','files/observations').toString().split(/\r?\n/)
-const ids=names.filter(n=>/^[0-9]{10,17}\.json$/.test(n)).map(n=>n.slice(0,-5)).filter(id=>Number(id)>now-7*86400000&&Number(id)<=now).sort().reverse().slice(0,limit)
+const records=[]
+for(const name of names.filter(n=>/^[0-9]{10,17}\.json$/.test(n))){const id=name.slice(0,-5);try{const meta=JSON.parse(run('exec-out','run-as',app,'cat','files/observations/'+name).toString());if(meta.id!==id||!Number.isFinite(meta.capturedAt))throw Error('Invalid metadata');if(meta.capturedAt>now-7*86400000&&meta.capturedAt<=now+1000)records.push(meta)}catch(e){console.warn('Skipped observation '+id+': '+e.message)}}
+records.sort((a,b)=>(b.captureOrder??b.capturedAt)-(a.captureOrder??a.capturedAt))
 const items=[]
-for(const id of ids){
+for(const meta of records.slice(0,limit)){
   try{
-    const meta=JSON.parse(run('exec-out','run-as',app,'cat','files/observations/'+id+'.json').toString())
-    if(meta.id!==id||meta.capturedAt!==Number(id))throw Error('Invalid metadata')
-    const jpg=run('exec-out','run-as',app,'cat','files/observations/'+id+'.jpg')
+    const id=meta.id,jpg=run('exec-out','run-as',app,'cat','files/observations/'+id+'.jpg')
     if(jpg[0]!==255||jpg[1]!==216)throw Error('Invalid JPEG')
-    writeFileSync(path.join(output,id+'.jpg'),jpg)
-    items.push({...meta,rotationClockwise:meta.rotationClockwise??90,file:id+'.jpg'})
-  }catch(e){console.warn('Skipped observation '+id+': '+e.message)}
+    const state=['occupied','empty','unknown'].includes(meta.seatState)?meta.seatState:'unknown'
+    const file='Bloub_'+new Date(meta.capturedAt).toISOString().replace(/[:.]/g,'-')+'_'+state+'_'+id+'.jpg'
+    const data={...meta,seatState:state,manualGroundTruth:meta.manualGroundTruth??false,rotationClockwise:meta.rotationClockwise??90,file}
+    writeFileSync(path.join(output,file),jpg);writeFileSync(path.join(output,file.replace('.jpg','.json')),JSON.stringify(data,null,2));items.push(data)
+  }catch(e){console.warn('Skipped observation '+meta.id+': '+e.message)}
 }
-writeFileSync(path.join(output,'manifest.json'),JSON.stringify({exportedAt:new Date().toISOString(),deviceTime:now,retentionDays:7,items},null,2))
+writeFileSync(path.join(output,'manifest.json'),JSON.stringify({exportedAt:new Date().toISOString(),deviceTime:now,retentionDays:7,annotationsAreGroundTruth:false,items},null,2))
 console.log(JSON.stringify({output,exported:items.length,notice:'Local copies remain until you delete them; device cleanup does not delete exports.'},null,2))

@@ -17,7 +17,7 @@ export function sampleLights(scene:Scene,palette:Palette,offset=0){
       }
     }
     for(const wave of scene.waves){
-      const e=gaussian(Math.hypot(x-wave.x,y-wave.y)-wave.radius,48)*wave.opacity
+      const e=gaussian(Math.hypot(x-wave.x,y-wave.y)-wave.radius,wave.returning?105:65)*wave.opacity
       if(wave.returning)cold+=e;else warm+=e
     }
     return [Math.min(1,warm),Math.min(1,cold)] as const
@@ -25,7 +25,7 @@ export function sampleLights(scene:Scene,palette:Palette,offset=0){
   const trip=scene.t>=149&&scene.t<187&&scene.lightActive
   // Both interleaved LED banks must go dark. A flat core spans the nearest RGB
   // and white LEDs; feathered edges make the dark body travel without stepping.
-  const shadowAt=(x:number,y:number)=>smooth((Math.hypot(x-scene.x,y-scene.y)-RING_TRIP.bodyRadius)/RING_TRIP.bodyRadius)
+  const shadowAt=(x:number,y:number)=>smooth((Math.hypot(x-scene.x,y-scene.y)-RING_TRIP.bodyRadius*.58)/(RING_TRIP.bodyRadius*1.05))
   for(let i=0;i<24;i++){
     const p=ringPoint(i-offset/15),[a,b]=energyAt(p.x,p.y)
     for(let j=0;j<3;j++)rgb.push(trip?Math.round(color[j]!*shadowAt(p.x,p.y)):Math.round(Math.min(255,(color[j]!/255*a+cool[j]!/255*b)*255)))

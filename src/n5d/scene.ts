@@ -28,28 +28,23 @@ export function ringPoint(index:number,white=false){
   return {x:GEOMETRY.ringX+GEOMETRY.ringRadius*Math.sin(a),y:GEOMETRY.ringY-GEOMETRY.ringRadius*Math.cos(a)}
 }
 // One clock, physical positions, and matching position/velocity/acceleration at handoff.
-export const RING_TRIP={enter:156,exit:176,turns:2,angularSpeed:Math.PI/5,
-  speed:GEOMETRY.ringRadius*Math.PI/5,bodyRadius:70}
+export const RING_TRIP={enter:156,exit:176,turns:8/3,angularSpeed:-4*Math.PI/15,entryAngle:7*Math.PI/6,exitAngle:-25*Math.PI/6,
+  speed:GEOMETRY.ringRadius*4*Math.PI/15,bodyRadius:95}
 export function pathAt(t:number,seed=0,home={x:820,y:350}){
   let x=820,y=350,scale=1
   for(let i=1;i<WAYPOINTS.length;i++){
     const a=WAYPOINTS[i-1]!,b=WAYPOINTS[i]!
     if(t<=b[0]){const u=smooth((t-a[0])/(b[0]-a[0]));x=mix(a[1],b[1],u);y=mix(a[2],b[2],u);scale=mix(a[3],b[3],u);break}
   }
-  const v=RING_TRIP.speed,a=v*RING_TRIP.angularSpeed
-  if(t>=146&&t<150){
-    x=hermite(t-146,4,820,1230,0,120);y=hermite(t-146,4,350,410)
-  }else if(t>=150&&t<156){
-    x=hermite(t-150,6,1230,left,120,0,0,a);y=hermite(t-150,6,410,360,0,-v)
-  }else if(t>=156&&t<=176){
-    const angle=1.5*Math.PI+RING_TRIP.angularSpeed*(t-156)
-    x=GEOMETRY.ringX+GEOMETRY.ringRadius*Math.sin(angle)
-    y=GEOMETRY.ringY-GEOMETRY.ringRadius*Math.cos(angle)
-  }else if(t>176&&t<182){
-    x=hermite(t-176,6,left,1230,0,-120,a,0);y=hermite(t-176,6,360,220,-v,0)
-  }else if(t>=182&&t<188){
-    x=hermite(t-182,6,1230,820,-120,0);y=hermite(t-182,6,220,350)
-  }
+  const radius=GEOMETRY.ringRadius,omega=RING_TRIP.angularSpeed;
+  const endpoint=(angle:number)=>({x:GEOMETRY.ringX+radius*Math.sin(angle),y:GEOMETRY.ringY-radius*Math.cos(angle),vx:radius*Math.cos(angle)*omega,vy:radius*Math.sin(angle)*omega,ax:-radius*Math.sin(angle)*omega*omega,ay:radius*Math.cos(angle)*omega*omega});
+  const entry=endpoint(RING_TRIP.entryAngle),exit=endpoint(RING_TRIP.entryAngle+omega*20);
+  if(t>=146&&t<150){x=hermite(t-146,4,820,1230,0,120);y=hermite(t-146,4,350,410);}
+  else if(t>=150&&t<156){x=hermite(t-150,6,1230,entry.x,120,entry.vx,0,entry.ax);y=hermite(t-150,6,410,entry.y,0,entry.vy,0,entry.ay);}
+  else if(t>=156&&t<=176){const p=endpoint(RING_TRIP.entryAngle+omega*(t-156));x=p.x;y=p.y;}
+  else if(t>176&&t<182){x=hermite(t-176,6,exit.x,1230,exit.vx,-120,exit.ax,0);y=hermite(t-176,6,exit.y,220,exit.vy,0,exit.ay,0);}
+  else if(t>=182&&t<188){x=hermite(t-182,6,1230,820,-120,0);y=hermite(t-182,6,220,350);}
+  const pushed=envelope(t,235.5,236.5,240.5,247);x-=pushed*150;y-=pushed*35;
   if(t>=DVD.start&&t<=DVD.end){const p=dvdPose(t,dvdPlan(seed,home));return {x:p.x,y:p.y,scale:p.scale}}
   const anchored=envelope(t,25,36,75,84)+envelope(t,140,146,182,188)
   const offset=1-clamp01(anchored)
@@ -75,7 +70,7 @@ export function wavesAt(t:number):Wave[]{
 }
 export type CompanionState='idle'|'thinking'|'success'|'attention'|'sleep'
 export interface Scene {
-  t:number;x:number;y:number;scale:number;shape:ShapeId;buddy:number;growth:number;state:StateId;local:number;expression:ExpressionId;
+  accessory?:"camera"|"hello"|"surprise"|"curiosity";t:number;x:number;y:number;scale:number;shape:ShapeId;buddy:number;growth:number;state:StateId;local:number;expression:ExpressionId;
   portal:number;sleep:number;yaw:number;pitch:number;breath:number;label:string;
   homeX:number;homeY:number;variant:number;episode?:string;dvd:number;lightActive:boolean;lightMix:number;orbit:number;rotation:number;squash:number;trail:number;waves:Wave[];
 }
@@ -107,7 +102,7 @@ export function sampleScene(seconds:number,calm=false,seed=0,home={x:820,y:350},
     if(t>=25&&t<84){expression='curieux';label=t>=52&&t<75?'捉迷藏':'去小窝看看'}
     if(t>=140&&t<188){expression='curieux';label=t>=156&&t<176?'变成黑色小影子 · 绕两圈':'去灯环玩'}
     if(t>=188&&t<205)expression='heureux'
-    if(t>=205&&t<242){expression='attentif';label='和灯环交换光波'}
+    if(t>=205&&t<242){expression=t>=235.5?'surpris':'attentif';label=t>=235.5?'被光波推了一下':'和灯环交换光波'}
     if(t>=256&&t<277){expression='heureux';label='舒展一下'}
     if(sleep>.5){expression='somnolent';label='打个盹'}
     const act=ACTS.find(a=>t>=a[0]&&t<a[1]);if(act){state=act[2];local=t-act[0];label=act[3]}
@@ -119,7 +114,7 @@ export function sampleScene(seconds:number,calm=false,seed=0,home={x:820,y:350},
   const dvd=calm?0:dvdWeight(t)
   if(dvd>0){expression='heureux';label=t<DVD.return?'DVD 漂浮 · 碰边换色':'慢慢回到原位'}
   const stretch=calm?0:envelope(t,332,334,335,339)
-  const rotation=acrobat*12*Math.sin((t-256)*Math.PI/7)
+  const rotation=acrobat*12*Math.sin((t-256)*Math.PI/7)-envelope(t,235.5,236.5,240.5,247)*12
   const squash=1+acrobat*.07*Math.sin((t-256)*Math.PI/3)-stretch*.09
   const lightActive=!calm&&((t>=149&&t<187)||(t>=219&&t<240))
   const lightMix=calm?0:envelope(t,149,152,184,187)+envelope(t,219,221,238,240)

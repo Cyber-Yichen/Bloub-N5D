@@ -9,7 +9,7 @@ const trail=computed(()=>Array.from({length:8},(_,i)=>({...pathAt(props.scene.t-
 <template>
   <svg class="atmosphere" viewBox="0 0 1600 720" aria-hidden="true">
     <circle v-for="(w,i) in scene.waves" :key="i" :cx="w.x" :cy="w.y" :r="w.radius"
-      fill="none" :stroke="w.returning?palette.rim:palette.amber" stroke-width="3" :opacity="w.opacity*.5"/>
+      fill="none" :stroke="w.returning?palette.rim:palette.amber" :stroke-width="w.returning?75:8" :opacity="w.opacity*(w.returning?.16:.5)"/>
     <circle v-for="(b,i) in bubbles" :key="i" :cx="b.x" :cy="b.y" :r="b.r" :opacity="b.opacity" fill="#000" :stroke="palette.rim" stroke-width=".8"/>
     <g :fill="palette.amber" :opacity="scene.trail">
       <circle v-for="p in trail" :key="p.i" :cx="p.x" :cy="p.y" :r="7-p.i*.65" :opacity="(1-p.i/8)*.55"/>

@@ -1,7 +1,7 @@
 import { clamp01,type Scene } from './scene'
 export interface SensorData {
   level:number;music:number;speech:number;distance:number;motion:number;faces:number;faceX:number;faceY:number;
-  micStatus:string;cameraStatus:string;tofStatus:string;cameraOn:boolean;cameraFrames:number;
+  lastPhotoUptime?:number;seatState?:string;seatObserving?:boolean;micStatus:string;cameraStatus:string;tofStatus:string;cameraOn:boolean;cameraFrames:number;
 }
 export const emptySensors:SensorData={level:0,music:0,speech:0,distance:-1,motion:0,faces:0,faceX:0,faceY:0,
   micStatus:'关闭',cameraStatus:'关闭',tofStatus:'关闭',cameraOn:false,cameraFrames:0}

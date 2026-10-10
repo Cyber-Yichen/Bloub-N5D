@@ -21,6 +21,7 @@ describe('desktop pet director',()=>{
     expect([...seen].sort()).toEqual(Object.keys(CLIPS).sort());expect(homes.size).toBeGreaterThan(20);expect(different).toBe(true)
     for(let i=1;i<order.length;i++)expect(order[i]).not.toBe(order[i-1])
   })
+  it('omits hole and bubble stories when the theme cannot merge with the physical aperture',()=>{const d=new PetDirector(19);const seen=new Set<string>();for(let t=0;t<1200;t+=.4){const s=d.sample(t,false,false);expect(s.portal+s.buddy+s.growth).toBe(0);seen.add(s.episode!)}expect(seen.has('ring')).toBe(true);expect(seen.has('dvd')).toBe(true);expect(seen.has('hole')).toBe(false);})
   it('produces reproducible safe DVD variants that restore their own homes',()=>{
     const signatures=new Set<string>()
     for(let seed=1;seed<=25;seed++){
@@ -46,8 +47,9 @@ describe('desktop pet director',()=>{
   })
   it('moves the RGB and staggered white dark gap together and uses full channel peaks',()=>{
     const base=sampleScene(156),frame=sampleLights(base,THEMES[0],90)
-    expect(frame.rgb.slice(0,3)).toEqual([0,0,0]);expect(frame.white[0]).toBe(0)
+    expect(frame.rgb.slice(20*3,20*3+3)).toEqual([0,0,0]);expect(frame.white[20]).toBe(0)
     expect(Math.max(...frame.rgb)).toBe(255);expect(Math.max(...frame.white)).toBe(255)
     expect(sampleLights(sampleScene(130),THEMES[0]).active).toBe(false)
+    for(let t=156;t<176;t+=.02){const f=sampleLights(sampleScene(t),THEMES[0]);const dark=f.rgb.filter((v,i)=>i%3===0&&v===0);expect(dark.length).toBeLessThanOrEqual(2);expect(dark.length).toBeGreaterThanOrEqual(1)}
   })
 })

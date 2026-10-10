@@ -9,6 +9,8 @@ sha256sum --check android/dependencies.sha256
 python3 - <<'DEPS'
 import zipfile
 from pathlib import Path
+with zipfile.ZipFile('android/toolchain/platform-27_r03.zip') as sdk:
+    Path('android/toolchain/android-27.jar').write_bytes(sdk.read('android-8.1.0/android.jar'))
 for name in ['tensorflow-lite','tensorflow-lite-api']:
     with zipfile.ZipFile('android/toolchain/'+name+'-2.14.0.aar') as src:
         for entry in src.namelist():
@@ -21,7 +23,7 @@ TF_CLASSPATH="android/toolchain/tensorflow-lite/classes.jar:android/toolchain/te
 node node_modules/vue-tsc/bin/vue-tsc.js --noEmit
 node node_modules/vite/bin/vite.js build --config vite.n5d.config.ts
 mkdir -p android/build/classes android/build/dex android/toolchain android/dist
-aapt package -f -M android/AndroidManifest.xml -S android/res -A dist-n5d -A android/assets -I "$ANDROID_JAR" -F android/build/resources.apk
+aapt package -f -M android/AndroidManifest.xml -S android/res -A dist-n5d -A android/assets -I android/toolchain/android-27.jar -F android/build/resources.apk
 "$JAVA_HOME/bin/javac" -encoding UTF-8 --release 8 -classpath "$ANDROID_JAR:$TF_CLASSPATH" -d android/build/classes android/src/com/cyberyichen/bloub/*.java
 "$JAVA_HOME/bin/jar" cf android/build/classes.jar -C android/build/classes .
 "$JAVA_HOME/bin/java" -cp "$R8_JAR" com.android.tools.r8.D8 --min-api 23 --lib "$ANDROID_JAR" --output android/build/dex android/build/classes.jar android/toolchain/tensorflow-lite/classes.jar android/toolchain/tensorflow-lite-api/classes.jar
@@ -39,7 +41,7 @@ zipalign -f 4 android/build/unsigned.apk android/build/aligned.apk
 if [[ ! -f android/toolchain/development.jks ]]; then
   "$JAVA_HOME/bin/keytool" -genkeypair -keystore android/toolchain/development.jks -storepass android -keypass android -alias bloub -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=Bloub N5D Development,O=Local,C=CN"
 fi
-apksigner sign --ks android/toolchain/development.jks --ks-key-alias bloub --ks-pass pass:android --key-pass pass:android --out android/dist/Bloub-N5D-0.8.0.apk android/build/aligned.apk
-zipalign -c 4 android/dist/Bloub-N5D-0.8.0.apk
-apksigner verify --verbose android/dist/Bloub-N5D-0.8.0.apk
-(cd android/dist && sha256sum Bloub-N5D-0.8.0.apk > SHA256SUMS.txt)
+apksigner sign --ks android/toolchain/development.jks --ks-key-alias bloub --ks-pass pass:android --key-pass pass:android --out android/dist/Bloub-N5D-0.9.0.apk android/build/aligned.apk
+zipalign -c 4 android/dist/Bloub-N5D-0.9.0.apk
+apksigner verify --verbose android/dist/Bloub-N5D-0.9.0.apk
+(cd android/dist && sha256sum Bloub-N5D-0.9.0.apk > SHA256SUMS.txt)

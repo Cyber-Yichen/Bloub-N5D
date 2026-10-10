@@ -28,3 +28,9 @@
 | [Eyadkelleh/Grok_bot](https://github.com/Eyadkelleh/Grok_bot) | SVG 动作工作室与 Bloub 状态展示 | 仅作为展示参考，未并入代码或素材；不对其许可作未经核实的声明 |
 
 角色视觉来源、商标与使用边界见 [免责声明](DISCLAIMER.md)。感谢上游作者；上述项目的作者并不因此为本项目的新增功能或发布包背书。
+
+## 对象存储与图标协议参考 · 0.9
+
+上传签名与 WebDAV 请求由本项目实现，APK 未导入 AWS/OSS/COS SDK。独立离线校验参考 [AWS SDK for JavaScript](https://github.com/aws/aws-sdk-js)、[阿里云 OSS Python SDK](https://github.com/aliyun/aliyun-oss-python-sdk)、[腾讯云 COS Python SDK](https://github.com/tencentyun/cos-python-sdk-v5)，其源码仅在本机生成测试向量，不提交或打包。测试中只保留合成凭证的输入与签名结果。
+
+接口依据：[OSS V1](https://www.alibabacloud.com/help/en/oss/include-signatures-in-the-authorization-header)、[COS XML 签名](https://www.tencentcloud.com/document/product/436/7778)、[AWS S3 签名](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html)。启动器图标依据 [Android Adaptive Icons](https://developer.android.com/develop/ui/views/launch/icon_design_adaptive) 分离背景与矢量前景；构建使用官方 SDK platform 27 资源定义，固定来源与哈希见 android/dependencies.json。
