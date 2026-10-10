@@ -8,7 +8,7 @@ export const emptySensors:SensorData={level:0,music:0,speech:0,distance:-1,motio
 export function reactScene(base:Scene,time:number,music:number,near:number,data:SensorData,calm=false):Scene{
   const s={...base}
   // Small additive reactions return gently; the portal/ring storyline keeps its trajectory.
-  const free=!calm&&!base.lightActive&&base.portal<.05&&base.sleep<.5&&base.x>500&&base.x<1250
+  const free=base.dvd===0&&!calm&&!base.lightActive&&base.portal<.05&&base.sleep<.5&&base.x>500&&base.x<1250
   if(!free)return s
   s.rotation+=Math.sin(time*Math.PI*1.6)*10*music
   s.x+=Math.sin(time*Math.PI*1.6)*18*music

@@ -1,4 +1,4 @@
-# Bloub 桌边 · 0.4.0 使用与构建
+# Bloub 桌边 · 0.5.0 使用与构建
 
 项目：[Cyber-Yichen/Bloub-N5D](https://github.com/Cyber-Yichen/Bloub-N5D)。上游基线 b4bb3c1b5f93c7b87a2e8d620f667c4093d97749，保留 MIT 许可。
 
@@ -74,7 +74,7 @@ WSL 网络不可用时，可以在同一个 checkout 通过 Windows 下载，再
 powershell -ExecutionPolicy Bypass -File android/fetch-model.ps1
 ```
 
-每个依赖的来源、版本和 SHA256 固定在 android/dependencies.json 与 android/dependencies.sha256。构建前验证哈希；输出 android/dist/Bloub-N5D-0.4.0.apk 和 SHA256SUMS.txt。minSdk23、targetSdk27，打包 arm64-v8a TFLite。
+每个依赖的来源、版本和 SHA256 固定在 android/dependencies.json 与 android/dependencies.sha256。构建前验证哈希；输出 android/dist/Bloub-N5D-0.5.0.apk 和 SHA256SUMS.txt。minSdk23、targetSdk27，打包 arm64-v8a TFLite。
 
 开发签名密钥会在本机 android/toolchain/development.jks 自动生成，不提交。不同人的本地开发签名不同；发布包使用维护者的同一签名。产物、工具链、模型下载缓存、设备诊断报告均按 .gitignore 排除；模型与附带许可作为明确的运行资源保留。
 
@@ -94,8 +94,14 @@ ADB 可执行文件可通过 ADB 环境变量指定；多设备连接时指定 N
 
 ## 验证
 
-227 项测试通过，包含两个完整循环、八种形状、两圈匀速、飞行与圆周 C2 交接、双灯列黑色缺口、泡泡增长、动作最短时长、感知叠加范围。设备验证证据记录在本地忽略目录 n5d-reports，不把现场音频、图像或设备地址上传到项目。
+232 项测试通过，包含两个完整循环、八种形状、两圈匀速、飞行与圆周 C2 交接、双灯列黑色缺口、泡泡增长、动作最短时长、感知叠加范围。设备验证证据记录在本地忽略目录 n5d-reports，不把现场音频、图像或设备地址上传到项目。
 
 入环前 Bot 轮廓半径缩至约 70 px / 6.6 mm，匹配黑色缺口的核心尺寸；环上位置和大小由同一几何约束决定。
 
 开源引用与第三方许可见 [REFERENCES.md](REFERENCES.md)，项目边界见 [DISCLAIMER.md](DISCLAIMER.md)。
+
+## DVD 碰边换色 · 0.5
+
+在六分钟循环的 278–301 秒加入一次漂浮。278–280 秒起漂；280–297 秒以 (170, -96) px/s 起始速度在四边反弹；297–301 秒减速归位。反弹轨迹按固定时间采样，与帧率无关。身体保留安全边界并避开挖孔；起漂、匀速段和归位采用位置、速度、加速度连续的五次曲线。碰边的 Bot 颜色在 180 ms 内过渡，连续碰到两边时从当前色接续；归位过程中淡回所选主题。背景不变、不保存临时色、不占用灯环。安静模式跳过；音乐额外位移在此期间暂停。
+
+诊断模式可使用 android/inspect.mjs dvd 验证完整片段的实际渲染、配色恢复及灯环未占用。

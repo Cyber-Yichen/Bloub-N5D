@@ -1,3 +1,6 @@
+import { clamp01,smooth,hermite } from './motion'
+export { clamp01,smooth } from './motion'
+import { DVD,dvdAt,dvdWeight } from './dvd'
 import { SHAPES,type ShapeId } from '../bot/skins'
 import type { StateId } from '../bot/states'
 import type { ExpressionId } from '../bot/expressions'
@@ -6,8 +9,6 @@ import type { ExpressionId } from '../bot/expressions'
 export const GEOMETRY={width:1600,height:720,holeX:44,holeY:360,holeRadius:24,cornerRadius:60,
   mmPerPixel:.0942,ringX:2150,ringY:360,ringRadius:32.8/.0942,ringBand:4.7/.0942}
 export const PERIOD=360
-export const clamp01=(v:number)=>Math.max(0,Math.min(1,v))
-export const smooth=(v:number)=>{const t=clamp01(v);return t*t*t*(10+t*(-15+6*t))}
 const mix=(a:number,b:number,t:number)=>a+(b-a)*t
 export const envelope=(t:number,a:number,b:number,c:number,d:number)=>smooth((t-a)/(b-a))*(1-smooth((t-c)/(d-c)))
 type Key=readonly [number,number,number,number]
@@ -29,11 +30,6 @@ export function ringPoint(index:number,white=false){
 // One clock, physical positions, and matching position/velocity/acceleration at handoff.
 export const RING_TRIP={enter:156,exit:176,turns:2,angularSpeed:Math.PI/5,
   speed:GEOMETRY.ringRadius*Math.PI/5,bodyRadius:70}
-function hermite(t:number,d:number,p0:number,p1:number,v0=0,v1=0,a0=0,a1=0){
-  const u=clamp01(t/d),v=v0*d,a=a0*d*d/2
-  const q=p1-p0-v-a,r=v1*d-v-2*a,s=a1*d*d-2*a
-  return p0+v*u+a*u*u+(10*q-4*r+s/2)*u**3+(-15*q+7*r-s)*u**4+(6*q-3*r+s/2)*u**5
-}
 export function pathAt(t:number){
   let x=820,y=350,scale=1
   for(let i=1;i<WAYPOINTS.length;i++){
@@ -54,6 +50,7 @@ export function pathAt(t:number){
   }else if(t>=182&&t<188){
     x=hermite(t-182,6,1230,820,-120,0);y=hermite(t-182,6,220,350)
   }
+  if(t>=DVD.start&&t<=DVD.end){const p=dvdAt(t);return {x:p.x,y:p.y,scale:p.scale}}
   return {x,y,scale}
 }
 // One-shot morphs finish before the next action; breathing intervals reconnect them.
@@ -78,11 +75,11 @@ export type CompanionState='idle'|'thinking'|'success'|'attention'|'sleep'
 export interface Scene {
   t:number;x:number;y:number;scale:number;shape:ShapeId;buddy:number;growth:number;state:StateId;local:number;expression:ExpressionId;
   portal:number;sleep:number;yaw:number;pitch:number;breath:number;label:string;
-  lightActive:boolean;lightMix:number;orbit:number;rotation:number;squash:number;trail:number;waves:Wave[];
+  dvd:number;lightActive:boolean;lightMix:number;orbit:number;rotation:number;squash:number;trail:number;waves:Wave[];
 }
 export function shapeAt(seconds:number,seed=0):ShapeId{
   const t=((seconds%PERIOD)+PERIOD)%PERIOD
-  if((t>=24&&t<115)||(t>=139&&t<188)||(t>=205&&t<242)||(t>=302&&t<346))return 'cercle'
+  if((t>=24&&t<115)||(t>=139&&t<188)||(t>=205&&t<242)||(t>=DVD.start&&t<346))return 'cercle'
   // Shuffle all eight shapes once per bag; never pick a new random value per frame.
   const slot=Math.floor(seconds/12),bag=Math.floor(slot/SHAPES.length)
   const order=SHAPES.map((s,i)=>({id:s.id,key:hash(seed+bag*7919+i*104729)})).sort((a,b)=>a.key-b.key)
@@ -119,13 +116,15 @@ export function sampleScene(seconds:number,calm=false,seed=0):Scene{
   const yaw=mix(mix(12+Math.sin(seconds*Math.PI/15)*7,-45,portal),43,clamp01(right))
   const pitch=mix(mix(8,-3,portal),22,sleep)
   const acrobat=calm?0:envelope(t,256,259,273,277)
+  const dvd=calm?0:dvdWeight(t)
+  if(dvd>0){expression='heureux';label=t<DVD.return?'DVD 漂浮 · 碰边换色':'慢慢回到原位'}
   const stretch=calm?0:envelope(t,332,334,335,339)
   const rotation=acrobat*12*Math.sin((t-256)*Math.PI/7)
   const squash=1+acrobat*.07*Math.sin((t-256)*Math.PI/3)-stretch*.09
   const lightActive=!calm&&((t>=149&&t<187)||(t>=219&&t<240))
   const lightMix=calm?0:envelope(t,149,152,184,187)+envelope(t,219,221,238,240)
   return {...p,t,shape:shapeAt(seconds,seed),buddy,growth,scale:p.scale*(1+.008*Math.sin(seconds*Math.PI/3))*(1+.32*growth),state,local,expression,
-    portal,sleep,yaw,pitch,breath,label,lightActive,lightMix,rotation,squash,
+    portal,sleep,yaw,pitch,breath,label,dvd,lightActive,lightMix,rotation,squash,
     orbit:calm?0:envelope(t,270,271,273,275),trail:calm?0:envelope(t,150,152,180,184),
     waves:calm?[]:wavesAt(t)}
 }

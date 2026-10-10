@@ -8,7 +8,7 @@ import Atmosphere from './Atmosphere.vue'
 import { sampleLights } from './lighting'
 import { reactScene,emptySensors,type SensorData } from './reactions'
 import { GEOMETRY, sampleScene, externalPose, smooth, type Scene, type CompanionState } from './scene'
-import { paletteAt, blendPalette, type ThemeId, type Palette } from './themes'
+import { paletteAt, blendPalette, dvdPalette, type ThemeId, type Palette } from './themes'
 
 interface NativeBridge { frame(json: string): void; sensors(mic:boolean,camera:boolean,tof:boolean):void; enableLights(on: boolean): void; brightness(value: number): void; ready(): void; openRingStudio(): void; openProject():void }
 declare global { interface Window {
@@ -54,11 +54,12 @@ const story=computed(()=>{
   const target=sampleScene(clock.value,calm.value,seed), transition=modeChange.value
   if(!transition)return target
   const u=smooth((clock.value-transition.at)/3)
-  for(const key of ['x','y','scale','portal','sleep','yaw','pitch','rotation','squash','trail','buddy','growth'] as const)target[key]=transition.from[key]+(target[key]-transition.from[key])*u
+  for(const key of ['x','y','scale','portal','sleep','yaw','pitch','rotation','squash','trail','buddy','growth','dvd'] as const)target[key]=transition.from[key]+(target[key]-transition.from[key])*u
   return target
 })
 const scene=computed(()=>reactScene(story.value,clock.value,musicStrength.value,nearStrength.value,sensorData.value,calm.value))
-const musicShown=computed(()=>!calm.value&&!story.value.lightActive&&story.value.portal<.05&&story.value.sleep<.5&&story.value.x>500&&story.value.x<1250?musicStrength.value:0)
+const bodyPalette=computed(()=>dvdPalette(palette.value,scene.value.t,scene.value.dvd))
+const musicShown=computed(()=>!story.value.dvd&&!calm.value&&!story.value.lightActive&&story.value.portal<.05&&story.value.sleep<.5&&story.value.x>500&&story.value.x<1250?musicStrength.value:0)
 const pose=computed(()=>{
   if(userState.value)return externalPose(userState.value)
   // Finish one-shot transformations before accepting a new greeting.
@@ -74,7 +75,7 @@ const portalOpacity=computed(()=>.2+.7*scene.value.portal)
 // Without a working light session the excursion stays visible near the right edge.
 const displayPosition=computed(()=>{
   const s=scene.value
-  if(s.x<=1230)return {x:s.x,y:s.y}
+  if(s.dvd>0||s.x<=1230)return {x:s.x,y:s.y}
   const u=smooth((s.x-1230)/400)
   const x=1230+(s.x-1230)/(1+((s.x-1230)/160)**3)**(1/3),y=360+(s.y-360)*(1-.6*u)
   return {x:x+(s.x-x)*ringBlend.value,y:y+(s.y-y)*ringBlend.value}
@@ -157,7 +158,7 @@ onMounted(()=>{
     userState.value=state;userUntil=clock.value+Math.max(.8,Math.min(120,Number.isFinite(duration)?duration:8))
   },reset(){userState.value=null}}
   // Explicit diagnostic URL only; the normal appliance has no seek or speed control.
-  if(new URLSearchParams(location.search).has('debug'))window.n5dDebug={seek(t){if(Number.isFinite(t)){clock.value=Math.max(0,t);paused=true}},resume(){paused=false;previous=0},snapshot(){return {clock:clock.value,...scene.value,lights:lights.value,status:status.value,sensors:{...sensorData.value},musicStrength:musicStrength.value,nearStrength:nearStrength.value,look:{...gaze.value},renderState:pose.value.state,touchTarget:attention.target,touchRipples:taps.value.length}}}
+  if(new URLSearchParams(location.search).has('debug'))window.n5dDebug={seek(t){if(Number.isFinite(t)){clock.value=Math.max(0,t);paused=true}},resume(){paused=false;previous=0},snapshot(){return {clock:clock.value,...scene.value,lights:lights.value,status:status.value,sensors:{...sensorData.value},musicStrength:musicStrength.value,nearStrength:nearStrength.value,look:{...gaze.value},renderState:pose.value.state,touchTarget:attention.target,touchRipples:taps.value.length,bodyColor:bodyPalette.value.body,paperColor:palette.value.paper}}}
   window.N5D?.ready();window.N5D?.brightness(brightness.value/100);window.N5D?.enableLights(lights.value);configureSensors()
   raf=requestAnimationFrame(tick);hintTimer=window.setTimeout(()=>hint.value=false,7000)
 })
@@ -175,7 +176,7 @@ onBeforeUnmount(()=>{cancelAnimationFrame(raf);clearTimeout(hold);clearTimeout(h
         </g>
       </svg>
       <div class="companion-position" :style="bodyStyle">
-        <Avatar ref="avatar" :time="clock" :local="scene.local" :shape="scene.shape" :state="pose.state" :expression="pose.expression" :yaw="gaze.yaw" :pitch="gaze.pitch" :palette="palette"/>
+        <Avatar ref="avatar" :time="clock" :local="scene.local" :shape="scene.shape" :state="pose.state" :expression="pose.expression" :yaw="gaze.yaw" :pitch="gaze.pitch" :palette="bodyPalette"/>
       </div>
       <svg class="aperture" viewBox="0 0 1600 720" aria-hidden="true">
         <g :opacity="portalOpacity" fill="none" :stroke="palette.rim">

@@ -73,6 +73,36 @@ try{
     await evaluate("document.querySelector('.close').click();window.n5dDebug.seek(191)")
     await sleep(900);if(ring().external)throw Error('Trip did not restore local lights')
     writeFileSync(path.join(output,'v03-evidence.json'),JSON.stringify(evidence,null,2))
+
+  }else if(command==='dvd'){
+    if(await evaluate("Boolean(document.querySelector('.controls'))"))await evaluate("document.querySelector('.close').click()")
+    await evaluate("window.n5dDebug.seek(277.5);window.n5dDebug.resume()")
+    await sleep(150)
+    const original=await evaluate('window.n5dDebug.snapshot()'),samples=[]
+    let captured=false,ended=false
+    const deadline=Date.now()+35000
+    while(Date.now()<deadline){
+      const v=await evaluate("({scene:window.n5dDebug.snapshot(),transform:document.querySelector('.companion-position').style.transform,fill:document.querySelector('.avatar path[mask]').getAttribute('fill'),paper:document.querySelector('.stage').style.background})")
+      const s=v.scene
+      if(s.dvd>0){
+        if(ring().external)throw Error('DVD excursion owns the ring')
+        const coords=v.transform.match(/translate\(([-.\d]+)px,\s*([-.\d]+)px\)/)
+        if(!coords||Math.hypot(Number(coords[1])-s.x,Number(coords[2])-s.y)>.01)throw Error('Rendered DVD was compressed by the ring fallback')
+        if(v.fill!==s.bodyColor)throw Error('Rendered body tint did not match DVD palette')
+        if(s.paperColor!==original.paperColor)throw Error('DVD changed the background')
+        samples.push(v)
+        if(!captured&&s.t>283.1){await capture('dvd-bounce');captured=true}
+      }
+      if(s.t>301.2){
+        if(Math.hypot(s.x-820,s.y-350)>.01||s.bodyColor!==original.bodyColor||s.dvd!==0)throw Error('DVD did not restore home position and palette')
+        await capture('dvd-restored');ended=true;break
+      }
+      await sleep(250)
+    }
+    if(!ended||!captured)throw Error('DVD playback did not finish in the foreground')
+    if(new Set(samples.map(v=>v.scene.bodyColor)).size<6)throw Error('Too few impact tints')
+    writeFileSync(path.join(output,'dvd-evidence.json'),JSON.stringify({original,samples},null,2))
+    console.log(JSON.stringify({samples:samples.length,colors:new Set(samples.map(v=>v.scene.bodyColor)).size,restored:true,ringReleased:!ring().external}))
   }else if(command==='music-demo'){
     await evaluate(`window.n5dDebug.seek(126);window.n5dDebug.resume();
       window.__realSensors=window.n5dSensors;window.n5dSensors=()=>{};
