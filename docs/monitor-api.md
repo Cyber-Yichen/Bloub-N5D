@@ -1,4 +1,4 @@
-# 监控录像与对象存储 · 0.9.0
+# 监控录像与对象存储 · 0.9.1
 
 网页进入「监控」配置，设备图库只显示「监控」开关。默认关闭录像和自动上传。开启后保持 Bloub 在前台，录制无声 H.264 / MP4 分段；相机关闭或权限未授予时不会录制。设备切后台停止录像与感知，已完成的分段保留。
 
@@ -8,10 +8,10 @@
 | --- | --- | --- | --- |
 | 群晖 / 威联通等 NAS | WebDAV | `https://nas.example.com:5006/录像` | NAS 用户名、密码；先启用 WebDAV，并授予目录创建与写入权限 |
 | MinIO / 提供 S3 服务的 NAS | S3 | `https://s3.example.com:9000` | bucket、地域、访问 ID、密钥；使用 path-style 请求 |
-| 阿里云 OSS | OSS | `https://my-bucket.oss-cn-hangzhou.aliyuncs.com` | bucket=`my-bucket`，AccessKey ID / Secret；可填 STS token |
-| 腾讯云 COS | COS | `https://my-bucket-1250000000.cos.ap-beijing.myqcloud.com` | 完整 bucket、SecretId / SecretKey；可填临时 token |
+| 阿里云 OSS | OSS | 自动生成 | 存储桶、地域、AccessKey ID / Secret；可填 STS token |
+| 腾讯云 COS | COS | 自动生成 | 完整存储桶（含 APPID）、地域、SecretId / SecretKey；可填临时 token |
 
-NAS 通过 WebDAV 或 S3 适配，未实现直接 SMB / NFS 挂载。TrueNAS 需另行提供 S3 服务，例如运行 MinIO。云地址使用官方存储桶域名，不包含目录；目录填写在「目录前缀」。HTTPS 使用系统证书与主机名验证，不接受任意自签名证书。只有明确打开「允许局域网 HTTP」才接受 HTTP 地址。
+NAS 通过 WebDAV 或 S3 适配，未实现直接 SMB / NFS 挂载。TrueNAS 需另行提供 S3 服务，例如运行 MinIO。NAS WebDAV 不使用存储桶或地域。S3 仍需存储桶，签名地域默认 us-east-1，放在高级配置。OSS / COS 由存储桶与地域生成标准 HTTPS 地址，不要求手输地址；目录统一填写「存放目录」。OSS 自定义域名可在高级配置填写：新 OSS 用户的部分中国内地数据 API 受官方域名策略限制，需使用已绑定的 CNAME。HTTPS 使用系统证书与主机名验证，不接受任意自签名证书。只有明确打开「允许局域网 HTTP」才接受 HTTP 地址。
 
 密钥和临时令牌由 Android Keystore AES-GCM 加密后存储。读取接口只返回 secretConfigured / tokenConfigured，不返回凭证。保存时密码留空代表保留；「清除」才删除。访问 ID 和 NAS 用户名属于连接配置，会在网页显示。此局域网网页本身使用 HTTP，配置凭证时应使用可信局域网，勿把服务映射到公网。
 
@@ -26,7 +26,7 @@ NAS 通过 WebDAV 或 S3 适配，未实现直接 SMB / NFS 挂载。TrueNAS 需
 - 异常退出留下的临时片段，下次启动尝试恢复可读 MP4；未能完成容器的片段无法保证恢复。
 - 开启监控是明确的连续录像操作，因此不受自动照片的夜间休息规则限制。停止网页实时画面不会停止已启用的监控；照片仍按工位状态间隔保存。
 
-云端上传签名使用 OSS V1、COS XML V5、S3 Signature V4。云签名时间会尝试参考服务端 HTTPS Date 头，不修改设备时钟；仍需保持设备时间正确。请求拒绝重定向；连接、读取及整次上传有超时限制。
+云端上传签名使用 OSS V4、COS XML V5、S3 Signature V4。云签名时间会尝试参考服务端 HTTPS Date 头，不修改设备时钟；仍需保持设备时间正确。请求拒绝重定向；连接、读取及整次上传有超时限制。
 
 ## API
 
@@ -41,7 +41,7 @@ NAS 通过 WebDAV 或 S3 适配，未实现直接 SMB / NFS 挂载。TrueNAS 需
 | GET | `/api/videos/{id}.mp4` | 下载已完成的视频 |
 | POST | `/api/videos/{id}.mp4/delete` | 删除本机视频与标签 |
 
-配置字段：provider、endpoint、bucket、region、prefix、accessId、username、autoUpload、allowHttp、segmentSeconds、storageMiB、localDays；写入另外接受 secret、token、clearSecret、clearToken。非法类型、范围、地址和路径返回 400；凭证不会放进 URL。
+配置字段：provider、endpoint、endpointOverride、bucket、region、prefix、accessId、username、autoUpload、allowHttp、segmentSeconds、storageMiB、localDays；写入另外接受 secret、token、clearSecret、clearToken。非法类型、范围、地址和路径返回 400；凭证不会放进 URL。
 
 ```json
 {
@@ -67,3 +67,11 @@ NAS 通过 WebDAV 或 S3 适配，未实现直接 SMB / NFS 挂载。TrueNAS 需
 没有提供实际 OSS/COS 账号及 NAS 环境，因此未验证真实存储桶权限、云服务区域配置或具体 NAS 固件。使用前在网页确认首次上传完成；本应用不是安防录像系统，也未提供网络故障下的无限存储保证。
 
 参考：[OSS 签名](https://www.alibabacloud.com/help/en/oss/include-signatures-in-the-authorization-header)、[COS 签名](https://www.tencentcloud.com/document/product/436/7778)、[S3 Signature V4](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html)。
+
+## 0.9.1 配置迁移
+
+OSS / COS 请求只需 provider、bucket、region，不需 endpoint；设备生成地址并校验。OSS 可用 endpointOverride 指定已绑定的 HTTPS 自定义域名，不能含路径、查询或用户信息。旧官方域名配置从域名恢复地域。WebDAV 规范化后 bucket / region 为空；S3 允许局域网 HTTP 的既有显式开关保持。
+
+更换存储类型后须使用对应凭证：后台清除上一类型的密码和临时令牌，防止把 NAS 密码用于云签名；网页同时关闭自动上传，填写并保存后再打开。云签名升级到 OSS V4，三组新样例独立对照官方 Python SDK，包括中文/空格、百分号、临时令牌。
+
+参考：[群晖 WebDAV](https://kb.synology.com/en-global/DSM/help/WebDAVServer/webdav_server)、[OSS 地域和域名](https://www.alibabacloud.com/help/en/oss/user-guide/regions-and-endpoints)、[OSS V4](https://help.aliyun.com/zh/oss/developer-reference/recommend-to-use-signature-version-4)、[OSS V1 停用公告](https://www.alibabacloud.com/en/notice/notice_on_the_discontinuation_of_the_oss_v1_signature_algorithm_40f)。

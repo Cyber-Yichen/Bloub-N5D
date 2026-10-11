@@ -29,6 +29,9 @@ final class SensorHub {
     private volatile AudioRecord recorder;private volatile java.lang.Process tofHelper;
     private volatile float level,music,speech,motion,faceX,faceY;private volatile int distance=-1,faces;
     private volatile String micStatus="关闭",cameraStatus="关闭",tofStatus="关闭";
+    private volatile boolean softwareExposure;private long exposureGain;private Range<Long> exposureRange;private Range<Integer> isoRange;
+    private CaptureRequest.Builder repeatingBuilder;private Range<Integer> compensationRange;private double compensationStep=.5;private int requestedCompensation;private long lastMeter,cameraOpenedAt;
+    private volatile long exposureTimeNs;private volatile int sensitivity,aeState=-1,exposureCompensation;
     private volatile boolean cameraOn,processing,photoSaving;private boolean ownsRecorder,opening;private Surface previewSurface;
     private volatile CameraDevice camera;private volatile CameraCaptureSession session;
     static final class StreamFrame {final byte[] jpeg;final long capturedAt,sequence;final double encodeMs;StreamFrame(byte[] bytes,long at,long sequence,double ms){jpeg=bytes;capturedAt=at;this.sequence=sequence;encodeMs=ms;}}
@@ -137,7 +140,7 @@ final class SensorHub {
             CameraCharacteristics c=manager.getCameraCharacteristics(id);StreamConfigurationMap map=c.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             JSONObject info=new JSONObject().put("orientation",c.get(CameraCharacteristics.SENSOR_ORIENTATION)).put("facing",c.get(CameraCharacteristics.LENS_FACING)).put("level",c.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)).put("exposure",String.valueOf(c.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE))).put("iso",String.valueOf(c.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE)));
             JSONArray preview=new JSONArray(),jpeg=new JSONArray();if(map!=null){Size[] p=map.getOutputSizes(SurfaceTexture.class),j=map.getOutputSizes(ImageFormat.JPEG);if(p!=null)for(Size s:p)preview.put(s.toString());if(j!=null)for(Size s:j)jpeg.put(s.toString());}
-            info.put("preview",preview).put("jpeg",jpeg).put("capabilities",Arrays.toString(c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES))).put("fpsRanges",Arrays.toString(c.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)));data.put(id,info);
+            info.put("maxAeRegions",c.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AE));info.put("aeModes",Arrays.toString(c.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_MODES))).put("exposureCompensationRange",String.valueOf(c.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE))).put("exposureCompensationStep",String.valueOf(c.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP)));info.put("preview",preview).put("jpeg",jpeg).put("capabilities",Arrays.toString(c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES))).put("fpsRanges",Arrays.toString(c.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)));data.put(id,info);
         }catch(Exception e){try{data.put(id,new JSONObject().put("error","unavailable"));}catch(JSONException ignored){}}
         return data.toString();
     }
@@ -149,12 +152,15 @@ final class SensorHub {
     }
     private void configureExposure(CaptureRequest.Builder r,CameraCharacteristics c){
         r.set(CaptureRequest.CONTROL_MODE,CaptureRequest.CONTROL_MODE_AUTO);r.set(CaptureRequest.CONTROL_AWB_MODE,CaptureRequest.CONTROL_AWB_MODE_AUTO);
-        int[] capabilities=c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES);boolean manual=false;if(capabilities!=null)for(int cap:capabilities)if(cap==CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR)manual=true;
-        if(manual){
-            r.set(CaptureRequest.CONTROL_AE_MODE,CaptureRequest.CONTROL_AE_MODE_OFF);
-            Range<Long> times=c.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE);Range<Integer> iso=c.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE);
-            r.set(CaptureRequest.SENSOR_EXPOSURE_TIME,times==null?10000000L:times.clamp(10000000L));r.set(CaptureRequest.SENSOR_SENSITIVITY,iso==null?400:iso.clamp(400));r.set(CaptureRequest.SENSOR_FRAME_DURATION,33350000L);
-        }else r.set(CaptureRequest.CONTROL_AE_MODE,CaptureRequest.CONTROL_AE_MODE_ON);
+        if(softwareExposure){r.set(CaptureRequest.CONTROL_AE_MODE,CaptureRequest.CONTROL_AE_MODE_OFF);applyGain(r);return;}
+        r.set(CaptureRequest.CONTROL_AE_MODE,CaptureRequest.CONTROL_AE_MODE_ON);
+        r.set(CaptureRequest.CONTROL_AE_LOCK,false);
+        Range<Integer> compensation=c.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE);
+        android.util.Rational step=c.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP);
+        if(compensation!=null&&step!=null&&step.doubleValue()>0)r.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION,compensation.clamp(requestedCompensation));
+        Range<Integer>[] rates=c.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);
+        if(rates!=null)for(Range<Integer> rate:rates)if(rate.getLower()==30&&rate.getUpper()==30){r.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,rate);break;}
+
     }
     private void capturePhoto(int generation,CameraDevice device,CameraCharacteristics c,ImageReader reader){
         if(stopped||generation!=cameraGeneration||camera!=device||session==null||!gallery.enabled()||(!pendingShot&&lastPhotoAt>0&&SystemClock.elapsedRealtime()-lastPhotoAt<settings.photoInterval(seat.currentState())))return;
@@ -178,7 +184,7 @@ final class SensorHub {
     void quietHours(int start,int end){quietStart=start;quietEnd=end;cameraHandler.post(()->{if(!cameraOn)cameraStatus=automaticAllowed()?"等待短时观察":"夜间休息 · 声音唤醒";});}
     private boolean automaticAllowed(){Calendar c=Calendar.getInstance();return CameraSchedule.allows(c.get(Calendar.HOUR_OF_DAY)*60+c.get(Calendar.MINUTE),quietStart,quietEnd,SystemClock.elapsedRealtime(),lastSoundAt,micWanted);}
     private boolean live(){return !stopped&&liveRequested&&SystemClock.elapsedRealtime()<liveUntil;}
-    String remoteStatus(){try{return new JSONObject().put("live",live()).put("cameraOn",cameraOn).put("cameraId",cameraId).put("status",cameraStatus).put("detectionEnabled",seat.detecting()).put("faceAnalysis",false).put("lastCaptureId",lastCaptureId).put("quietStart",quietStart).put("quietEnd",quietEnd).put("automaticAllowed",automaticAllowed()).put("uptimeMs",SystemClock.elapsedRealtime()).put("streamFrames",streamFrames).put("streamFps",streamFps).put("streamEncodeMs",streamEncodeMs).toString();}catch(JSONException e){return "{}";}}
+    String remoteStatus(){try{return new JSONObject().put("live",live()).put("cameraOn",cameraOn).put("cameraId",cameraId).put("status",cameraStatus).put("detectionEnabled",seat.detecting()).put("faceAnalysis",false).put("lastCaptureId",lastCaptureId).put("quietStart",quietStart).put("quietEnd",quietEnd).put("automaticAllowed",automaticAllowed()).put("uptimeMs",SystemClock.elapsedRealtime()).put("streamFrames",streamFrames).put("streamFps",streamFps).put("streamEncodeMs",streamEncodeMs).put("exposureMode",softwareExposure?"software_auto":"hardware_auto").put("exposureTimeNs",exposureTimeNs).put("iso",sensitivity).put("aeState",aeState).put("exposureCompensation",exposureCompensation).toString();}catch(JSONException e){return "{}";}}
     boolean remote(String action){
         if(stopped||!cameraWanted||activity.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)return false;
         if("capture".equals(action)&&!gallery.enabled())return false;
@@ -221,6 +227,9 @@ final class SensorHub {
             CameraManager manager=(CameraManager)activity.getSystemService(Context.CAMERA_SERVICE);
             if(!Arrays.asList(manager.getCameraIdList()).contains(cameraId))throw new IOException("Camera absent");
             final CameraCharacteristics c=manager.getCameraCharacteristics(cameraId);
+            softwareExposure=false;int[] capabilities=c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES);if("2".equals(cameraId)&&capabilities!=null)for(int capability:capabilities)if(capability==CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR)softwareExposure=true;
+            exposureRange=c.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE);isoRange=c.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE);if(exposureRange==null||isoRange==null)softwareExposure=false;exposureGain=activity.getSharedPreferences("sensors",0).getLong("ae_gain_"+cameraId,800000000L);
+            compensationRange=c.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE);android.util.Rational step=c.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP);compensationStep=step==null?.5:step.doubleValue();requestedCompensation=compensationRange==null?0:compensationRange.clamp(activity.getSharedPreferences("sensors",0).getInt("ae_bias_"+cameraId,0));cameraOpenedAt=SystemClock.elapsedRealtime();lastMeter=0;
             StreamConfigurationMap map=c.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             if(map==null)throw new IOException("Missing stream map");
             final Size preview=chooseSize(map.getOutputSizes(SurfaceTexture.class),"2".equals(cameraId)?.75:4.0/3,1300000);
@@ -248,9 +257,12 @@ final class SensorHub {
                             try{
                                 CaptureRequest.Builder r=d.createCaptureRequest(videoTarget==null?CameraDevice.TEMPLATE_PREVIEW:CameraDevice.TEMPLATE_RECORD);r.addTarget(target);if(videoTarget!=null)r.addTarget(videoTarget);
                                 configureExposure(r,c);
+                                Integer maxRegions=c.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AE);Rect active=c.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
+                                if(maxRegions!=null&&maxRegions>0&&active!=null){float[] roi=seat.region();float l="2".equals(cameraId)?roi[1]:roi[0],top="2".equals(cameraId)?1-roi[2]:roi[1],right="2".equals(cameraId)?roi[3]:roi[2],bottom="2".equals(cameraId)?1-roi[0]:roi[3];Rect meter=new Rect(active.left+Math.round(l*active.width()),active.top+Math.round(top*active.height()),active.left+Math.round(right*active.width()),active.top+Math.round(bottom*active.height()));r.set(CaptureRequest.CONTROL_AE_REGIONS,new android.hardware.camera2.params.MeteringRectangle[]{new android.hardware.camera2.params.MeteringRectangle(meter,1000)});}
+                                repeatingBuilder=r;
                                 s.setRepeatingRequest(r.build(),new CameraCaptureSession.CaptureCallback(){
                                     private boolean logged;
-                                    public void onCaptureCompleted(CameraCaptureSession cs,CaptureRequest cr,TotalCaptureResult result){if(!logged){logged=true;Log.i("BloubSensors","CAMERA_EXPOSURE id="+cameraId+" ns="+result.get(CaptureResult.SENSOR_EXPOSURE_TIME)+" iso="+result.get(CaptureResult.SENSOR_SENSITIVITY)+" duration="+result.get(CaptureResult.SENSOR_FRAME_DURATION));}}
+                                    public void onCaptureCompleted(CameraCaptureSession cs,CaptureRequest cr,TotalCaptureResult result){Long time=result.get(CaptureResult.SENSOR_EXPOSURE_TIME);Integer iso=result.get(CaptureResult.SENSOR_SENSITIVITY),state=result.get(CaptureResult.CONTROL_AE_STATE),ev=result.get(CaptureResult.CONTROL_AE_EXPOSURE_COMPENSATION);if(time!=null)exposureTimeNs=time;if(iso!=null)sensitivity=iso;if(state!=null)aeState=state;if(ev!=null)exposureCompensation=ev;if(!logged){logged=true;Log.i("BloubSensors","CAMERA_EXPOSURE id="+cameraId+" ns="+result.get(CaptureResult.SENSOR_EXPOSURE_TIME)+" iso="+result.get(CaptureResult.SENSOR_SENSITIVITY)+" duration="+result.get(CaptureResult.SENSOR_FRAME_DURATION));}}
                                 },cameraHandler);if(videoTarget!=null){monitor.start();cameraHandler.postDelayed(()->{if(!stopped&&generation==cameraGeneration&&monitor.recording()){closeCamera();if(monitor.enabled())openCamera();}},monitor.segmentSeconds()*1000L);}if(photos!=null)cameraHandler.postDelayed(()->capturePhoto(generation,d,c,photos),2400);ui.postDelayed(()->savePreview(generation,preview,pendingShot),3800);cameraStatus=live()?"网页实时观察":"相机 "+cameraId+" · 短时观察";
                             }catch(Exception e){cameraStatus="相机配置失败";closeCamera();}
                         }
@@ -266,7 +278,7 @@ final class SensorHub {
     private void observeFrame(){
         if(stopped||!cameraOn)return;cameraFrames++;if(monitor.recording()&&activePreview!=null&&(lastPhotoAt==0||SystemClock.elapsedRealtime()-lastPhotoAt>=settings.photoInterval(seat.currentState())))savePreview(cameraGeneration,activePreview,false);
         long seatNow=SystemClock.elapsedRealtime();if(seat.reserve(seatNow)){Bitmap frame=null;try{frame=texture.getBitmap("2".equals(cameraId)?240:320,"2".equals(cameraId)?320:240);}catch(RuntimeException e){Log.w("BloubSeat","Frame read",e);}if(frame==null)seat.cancelFrame();else seat.observe(frame,cameraId,seatNow);}
-        long now=SystemClock.elapsedRealtime();if(processing||now-lastBitmap<(live()?1000:450))return;
+        long now=SystemClock.elapsedRealtime();if(now-cameraOpenedAt>1500&&now-lastMeter>800){lastMeter=now;meterExposure();}if(processing||now-lastBitmap<(live()?1000:450))return;
         lastBitmap=now;processing=true;
         Bitmap source=texture.getBitmap("2".equals(cameraId)?240:320,"2".equals(cameraId)?320:240);if(source==null){processing=false;return;}
         cameraHandler.post(()->{
@@ -282,7 +294,23 @@ final class SensorHub {
             finally{source.recycle();processing=false;}
         });
     }
+    private void meterExposure(){
+        if((!softwareExposure&&(compensationRange==null||compensationStep<=0))||repeatingBuilder==null)return;Bitmap image;try{image=texture.getBitmap(48,64);}catch(RuntimeException ignored){return;}if(image==null)return;
+        float[] roi=seat.region();int[] pixels=new int[48*64];image.getPixels(pixels,0,48,0,0,48,64);image.recycle();java.util.ArrayList<Integer> values=new java.util.ArrayList<>();
+        for(int y=0;y<64;y++)for(int x=0;x<48;x++){double u="2".equals(cameraId)?1-(y+.5)/64:(x+.5)/48,v="2".equals(cameraId)?(x+.5)/48:(y+.5)/64;if(u<roi[0]||u>roi[2]||v<roi[1]||v>roi[3])continue;int pixel=pixels[y*48+x];values.add((int)(.299*((pixel>>16)&255)+.587*((pixel>>8)&255)+.114*(pixel&255)));}
+        int[] luma=new int[values.size()];for(int i=0;i<luma.length;i++)luma[i]=values.get(i);int change=ExposureMeter.correction(luma);if(change==0)return;
+        final int generation=cameraGeneration;cameraHandler.post(()->{if(stopped||generation!=cameraGeneration||session==null||repeatingBuilder==null)return;if(softwareExposure){long next=ExposureMeter.nextGain(exposureGain,change,exposureRange.getLower()*isoRange.getLower(),Math.min(20000000L,exposureRange.getUpper())*Math.min(1600,isoRange.getUpper()));if(next==exposureGain)return;try{exposureGain=next;applyGain(repeatingBuilder);session.setRepeatingRequest(repeatingBuilder.build(),exposureCallback,cameraHandler);activity.getSharedPreferences("sensors",0).edit().putLong("ae_gain_"+cameraId,exposureGain).apply();}catch(Exception e){Log.w("BloubSensors","Automatic metering",e);}return;}
+            int lower=Math.max(compensationRange.getLower(),(int)Math.ceil(-2/compensationStep)),upper=Math.min(compensationRange.getUpper(),(int)Math.floor(2/compensationStep)),next=Math.max(lower,Math.min(upper,requestedCompensation+change));if(next==requestedCompensation)return;
+            try{repeatingBuilder.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION,next);session.setRepeatingRequest(repeatingBuilder.build(),exposureCallback,cameraHandler);requestedCompensation=next;activity.getSharedPreferences("sensors",0).edit().putInt("ae_bias_"+cameraId,next).apply();}catch(Exception e){Log.w("BloubSensors","Exposure correction",e);}
+        });
+    }
+    private void applyGain(CaptureRequest.Builder request){
+        long time=exposureRange.clamp(Math.min(10000000L,Math.max(exposureRange.getLower(),exposureGain/isoRange.getLower())));int iso=isoRange.clamp((int)Math.max(isoRange.getLower(),Math.min(1600,exposureGain/time)));time=exposureRange.clamp(Math.min(20000000L,Math.max(exposureRange.getLower(),exposureGain/iso)));
+        request.set(CaptureRequest.SENSOR_EXPOSURE_TIME,time);request.set(CaptureRequest.SENSOR_SENSITIVITY,iso);request.set(CaptureRequest.SENSOR_FRAME_DURATION,33350000L);
+    }
+    private final CameraCaptureSession.CaptureCallback exposureCallback=new CameraCaptureSession.CaptureCallback(){public void onCaptureCompleted(CameraCaptureSession s,CaptureRequest r,TotalCaptureResult result){Long time=result.get(CaptureResult.SENSOR_EXPOSURE_TIME);Integer iso=result.get(CaptureResult.SENSOR_SENSITIVITY),state=result.get(CaptureResult.CONTROL_AE_STATE),ev=result.get(CaptureResult.CONTROL_AE_EXPOSURE_COMPENSATION);if(time!=null)exposureTimeNs=time;if(iso!=null)sensitivity=iso;if(state!=null)aeState=state;if(ev!=null)exposureCompensation=ev;}};
     private void closeCamera(){
+        repeatingBuilder=null;
         if(session!=null)try{session.stopRepeating();}catch(Exception ignored){}if(ownsRecorder){monitor.finish();ownsRecorder=false;}
         cameraGeneration++;opening=false;ImageReader oldReader=photoReader;photoReader=null;if(oldReader!=null)oldReader.close();cameraOn=false;faces=0;motion=0;previousPixels=null;
         CameraCaptureSession s=session;session=null;if(s!=null)s.close();

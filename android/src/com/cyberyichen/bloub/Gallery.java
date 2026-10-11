@@ -43,7 +43,8 @@ final class Gallery {
     return id;
   }}
   String list(long before){return list(before,0,Long.MAX_VALUE,"all");}
-  String list(long before,long start,long end,String state){synchronized(LOCK){
+  String list(long before,long start,long end,String state){return list(before,start,end,state,0,12);}
+  String list(long before,long start,long end,String state,int requestedPage,int limit){synchronized(LOCK){
     prune();ArrayList<JSONObject> all=new ArrayList<>();File[] files=directory.listFiles();
     if(files!=null)for(File f:files)if(f.getName().endsWith(".json"))try{
       JSONObject d=new JSONObject(new String(readAll(f),"UTF-8"));
@@ -54,12 +55,14 @@ final class Gallery {
       String id=d.getString("id");d.put("url","/observations/"+id+".jpg").put("thumbnailUrl","/thumbnails/"+id+".jpg");all.add(d);
     }catch(Exception ignored){}
     all.sort((a,b)->Long.compare(b.optLong("captureOrder"),a.optLong("captureOrder")));
-    JSONArray items=new JSONArray();long next=0;
-    for(JSONObject d:all){long order=d.optLong("captureOrder");if(before>0&&order>=before)continue;
-      if(items.length()>=12){next=items.optJSONObject(items.length()-1).optLong("captureOrder");break;}items.put(d);
+    int pageSize=Math.max(1,Math.min(96,limit)),totalPages=Math.max(1,(all.size()+pageSize-1)/pageSize),page=Math.max(1,Math.min(totalPages,requestedPage));
+    JSONArray items=new JSONArray();long next=0;int offset=requestedPage>0?(page-1)*pageSize:0,index=0;
+    for(JSONObject d:all){long order=d.optLong("captureOrder");if(requestedPage<=0&&before>0&&order>=before)continue;if(index++<offset)continue;
+      if(items.length()>=pageSize){next=items.optJSONObject(items.length()-1).optLong("captureOrder");break;}items.put(d);
     }
-    try{return new JSONObject().put("enabled",enabled()).put("retentionDays",7).put("total",all.size()).put("items",items).put("nextBefore",next).toString();}catch(JSONException e){return "{}";}
+    try{return new JSONObject().put("enabled",enabled()).put("retentionDays",7).put("total",all.size()).put("items",items).put("nextBefore",next).put("page",page).put("pageSize",pageSize).put("totalPages",totalPages).toString();}catch(JSONException e){return "{}";}
   }}
+
   private long nextOrder(long now){
     android.content.SharedPreferences prefs=context.getSharedPreferences("gallery",0);long previous=prefs.getLong("capture_order",0);
     if(previous==0){File[] files=directory.listFiles();if(files!=null)for(File f:files)if(f.getName().endsWith(".json"))try{JSONObject data=new JSONObject(new String(readAll(f),"UTF-8"));previous=Math.max(previous,data.optLong("captureOrder",data.optLong("capturedAt")));}catch(Exception ignored){}}

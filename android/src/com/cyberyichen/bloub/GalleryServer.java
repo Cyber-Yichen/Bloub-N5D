@@ -58,8 +58,8 @@ final class GalleryServer {
   private void json(OutputStream out,int code,String body)throws IOException{bytes(out,code,"application/json; charset=utf-8",body.getBytes(StandardCharsets.UTF_8));}
   private byte[] asset(String name)throws IOException{try(InputStream in=context.getAssets().open(name);ByteArrayOutputStream out=new ByteArrayOutputStream()){copy(in,out);return out.toByteArray();}}
   private static void copy(InputStream in,OutputStream out)throws IOException{byte[] b=new byte[32768];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
-  private JSONObject listing(long before,long start,long end,String state)throws JSONException{
-    JSONObject data=new JSONObject(gallery.list(before,start,end,state));JSONArray items=data.getJSONArray("items");
+  private JSONObject listing(long before,long start,long end,String state,int page,int limit)throws JSONException{
+    JSONObject data=new JSONObject(gallery.list(before,start,end,state,page,limit));JSONArray items=data.getJSONArray("items");
     for(int i=0;i<items.length();i++){JSONObject p=items.getJSONObject(i);String id=p.getString("id");p.put("url","/api/photos/"+id+"/image?key="+key).put("thumbnailUrl","/api/photos/"+id+"/thumbnail?key="+key).put("downloadUrl","/api/photos/"+id+"/image?download=1&key="+key).put("metadataUrl","/api/photos/"+id+"/metadata?key="+key);}
     return data;
   }
@@ -98,8 +98,8 @@ final class GalleryServer {
     if("/api/camera/stream".equals(path)){stream(client,out);return;}
     if("/".equals(path)){bytes(out,200,"text/html; charset=utf-8",new String(asset("lan-gallery.html"),StandardCharsets.UTF_8).replace("__KEY__",key).getBytes(StandardCharsets.UTF_8));return;}
     if("/gallery.js".equals(path)){bytes(out,200,"application/javascript; charset=utf-8",asset("lan-gallery.js"));return;}
-    if("/api/health".equals(path)){json(out,200,new JSONObject().put("version","0.9.0").put("retentionDays",7).put("galleryReadOnly",false).put("settingsControl",true).put("monitoring",true).put("cameraControl",true).put("deviceTime",System.currentTimeMillis()).toString());return;}
-    if("/api/photos".equals(path)){long before=0;try{before=Long.parseLong(q.getOrDefault("before","0"));}catch(NumberFormatException bad){json(out,400,"{\"error\":\"invalid_cursor\"}");return;}json(out,200,listing(Math.max(0,before),start,end,state).toString());return;}
+    if("/api/health".equals(path)){json(out,200,new JSONObject().put("version","0.9.1").put("retentionDays",7).put("galleryReadOnly",false).put("settingsControl",true).put("monitoring",true).put("cameraControl",true).put("deviceTime",System.currentTimeMillis()).toString());return;}
+    if("/api/photos".equals(path)){long before=0;try{before=Long.parseLong(q.getOrDefault("before","0"));}catch(NumberFormatException bad){json(out,400,"{\"error\":\"invalid_cursor\"}");return;}int page=0,limit=12;try{page=Integer.parseInt(q.getOrDefault("page","0"));limit=Integer.parseInt(q.getOrDefault("pageSize","12"));if(page<0||page>1000000||limit<1||limit>96)throw new IllegalArgumentException();}catch(Exception bad){json(out,400,"{\"error\":\"invalid_page\"}");return;}json(out,200,listing(Math.max(0,before),start,end,state,page,limit).toString());return;}
     if("/api/archive.zip".equals(path)){archive(out,start,end,state);return;}
     String[] route=path.split("/");
     if(route.length==5&&"api".equals(route[1])&&"photos".equals(route[2])&&route[3].matches("[0-9]{10,17}")){

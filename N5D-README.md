@@ -1,4 +1,4 @@
-# Bloub 桌边 · 0.9.0 使用与构建
+# Bloub 桌边 · 0.9.1 使用与构建
 
 项目：[Cyber-Yichen/Bloub-N5D](https://github.com/Cyber-Yichen/Bloub-N5D)。上游基线 b4bb3c1b5f93c7b87a2e8d620f667c4093d97749，保留 MIT 许可。
 
@@ -76,7 +76,7 @@ WSL 网络不可用时，可以在同一个 checkout 通过 Windows 下载，再
 powershell -ExecutionPolicy Bypass -File android/fetch-model.ps1
 ```
 
-每个依赖的来源、版本和 SHA256 固定在 android/dependencies.json 与 android/dependencies.sha256。构建前验证哈希；输出 android/dist/Bloub-N5D-0.9.0.apk 和 SHA256SUMS.txt。minSdk23、targetSdk27，打包 arm64-v8a TFLite。
+每个依赖的来源、版本和 SHA256 固定在 android/dependencies.json 与 android/dependencies.sha256。构建前验证哈希；输出 android/dist/Bloub-N5D-0.9.1.apk 和 SHA256SUMS.txt。minSdk23、targetSdk27，打包 arm64-v8a TFLite。
 
 开发签名密钥会在本机 android/toolchain/development.jks 自动生成，不提交。不同人的本地开发签名不同；发布包使用维护者的同一签名。产物、工具链、模型下载缓存、设备诊断报告均按 .gitignore 排除；模型与附带许可作为明确的运行资源保留。
 
@@ -157,3 +157,7 @@ mkdir -p android/build/test
 javac -encoding UTF-8 -d android/build/test android/src/com/cyberyichen/bloub/{UploadSigner,PhotoAnnotation,WebDavFolders}.java android/test/com/cyberyichen/bloub/StorageCoreTest.java
 java -Djava.awt.headless=true -cp android/build/test com.cyberyichen.bloub.StorageCoreTest
 ```
+
+## 0.9.1
+
+修复相机 2 的固定曝光，改为持续根据工位画面调整快门与 ISO；工位观察无需校准即可开始判断，有效空位不再因背景变化而长期 unknown。网页工位时间、实时观察、图库分别显示，图库新增每页数量、页数与跳转。上传表单按 NAS / S3 / OSS / COS 区分字段，云地址自动生成，OSS 使用 V4 签名。详见图库、工位与监控 API 文档。

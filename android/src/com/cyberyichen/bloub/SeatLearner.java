@@ -12,14 +12,15 @@ final class SeatLearner {
     else if(kind==OCCUPIED){occupiedAnchor=f.clone();occupiedMean=f.clone();occupiedLabels++;}
   }
   int predict(float[] f,double person){
-    if(!ready()||!Double.isFinite(person)||person<0||person>1)return UNKNOWN;
+    if(f==null||f.length==0||!Double.isFinite(person)||person<0||person>1)return UNKNOWN;
+    if(!ready())return person>=.35?OCCUPIED:EMPTY;
     double e=distance(f,emptyMean),o=distance(f,occupiedMean);
     double separation=distance(emptyAnchor,occupiedAnchor),margin=Math.min(.08,separation*.35);
     if(e<.10&&o>e+Math.min(.06,separation*.3))return EMPTY;
     if(person>=.55&&e>Math.min(.12,separation*.6))return OCCUPIED;
     if(person>=.25&&o<.15&&e>o+margin)return OCCUPIED;
     if(person<.15&&e<.16&&o>e+margin)return EMPTY;
-    return UNKNOWN;
+    return person>=.35?OCCUPIED:EMPTY;
   }
   boolean adapt(int kind,float[] f,double person){
     if(!ready()||predict(f,person)!=kind)return false;

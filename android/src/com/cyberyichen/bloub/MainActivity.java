@@ -32,7 +32,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle saved){
         super.onCreate(saved);settings=new DeviceSettings(this);monitor=new MonitorRecorder(this);seat=new SeatMonitor(this);gallery=new Gallery(this);gallery.prune();gallery.schedule();galleryServer=new GalleryServer(this,gallery,new GalleryServer.CameraControl(){
-            public String status(){SensorHub hub=sensors;try{return new JSONObject(hub==null?"{}":hub.remoteStatus()).put("available",foreground&&cameraEnabled&&checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED).put("saving",gallery.enabled()).toString();}catch(Exception e){return "{}";}}
+            public String status(){SensorHub hub=sensors;try{return new JSONObject(hub==null?"{}":hub.remoteStatus()).put("available",hub!=null&&foreground&&cameraEnabled&&checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED).put("saving",gallery.enabled()).toString();}catch(Exception e){return "{}";}}
             public boolean command(String action){SensorHub hub=sensors;return foreground&&cameraEnabled&&hub!=null&&hub.remote(action);}
             public SensorHub.StreamFrame frame(){SensorHub hub=sensors;return hub==null?null:hub.streamFrame();}
             public void heartbeat(){SensorHub hub=sensors;if(hub!=null)hub.streamHeartbeat();}

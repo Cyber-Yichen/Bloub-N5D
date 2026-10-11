@@ -10,7 +10,7 @@ import java.text.SimpleDateFormat;
 final class SeatMonitor {
   private final Context context;private final HandlerThread thread=new HandlerThread("BloubSeat");private final Handler worker;
   private final SeatLearner learner=new SeatLearner();private final PresenceTimeline timeline=new PresenceTimeline();
-  private volatile boolean enabled,active,busy;private volatile long detectionUntil;private long lastStatistic,lastRetentionSweep;private volatile long previewUntil,lastInference;private volatile String preview="",message="选择座位区域，确认空位和在位",modelStatus="模型待加载";
+  private volatile boolean enabled,active,busy;private volatile long detectionUntil;private long lastStatistic,lastRetentionSweep;private volatile long previewUntil,lastInference;private volatile String preview="",message="正在观察",modelStatus="模型待加载";
   private volatile DetectionFrame boxes;
   private static final class DetectionFrame {final long at;final java.util.List<PersonDetector.Box> items;DetectionFrame(long at,java.util.List<PersonDetector.Box> items){this.at=at;this.items=items;}}
   private PersonDetector detector;private int version;private String cameraId;
@@ -21,7 +21,7 @@ final class SeatMonitor {
   boolean detecting(){return active&&SystemClock.elapsedRealtime()<detectionUntil;}
   void detection(boolean value){detectionUntil=value?SystemClock.elapsedRealtime()+90000:0;if(!value)boxes=null;}
   void heartbeat(){if(detecting())detectionUntil=SystemClock.elapsedRealtime()+90000;}
-  synchronized String currentState(){int s=active&&enabled&&learner.ready()?timeline.current(SystemClock.elapsedRealtime()):-1;return s==1?"occupied":s==0?"empty":"unknown";}
+  synchronized String currentState(){int s=active&&enabled?timeline.current(SystemClock.elapsedRealtime()):-1;return s==1?"occupied":s==0?"empty":"unknown";}
   String detections(){try{DetectionFrame f=boxes;JSONArray list=new JSONArray();if(detecting()&&f!=null&&SystemClock.elapsedRealtime()-f.at<1500)for(PersonDetector.Box b:f.items)list.put(new JSONObject().put("label",b.label).put("classId",b.classId).put("score",b.score).put("left",b.left).put("top",b.top).put("right",b.right).put("bottom",b.bottom));return new JSONObject().put("enabled",detecting()).put("captureUptime",f==null?0:f.at).put("boxes",list).toString();}catch(JSONException e){return "{}";}}
   void draw(Bitmap image,long at){DetectionFrame f=boxes;if(!detecting()||f==null||at<f.at||at-f.at>1500)return;Canvas canvas=new Canvas(image);Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);paint.setStrokeWidth(2.5f);paint.setTextSize(18);
     for(PersonDetector.Box b:f.items){float x=b.left*image.getWidth(),y=b.top*image.getHeight(),right=b.right*image.getWidth(),bottom=b.bottom*image.getHeight();if(right<=x||bottom<=y)continue;paint.setColor(Color.rgb(57,118,203));paint.setStyle(Paint.Style.STROKE);canvas.drawRect(x,y,right,bottom,paint);String text=(b.classId==0?"人":b.label)+" "+Math.round(b.score*100)+"%";float width=Math.min(image.getWidth(),paint.measureText(text)+12),left=Math.min(x,image.getWidth()-width),top=y>27?y-27:Math.min(image.getHeight()-27,y);paint.setStyle(Paint.Style.FILL);canvas.drawRect(left,top,left+width,top+27,paint);paint.setColor(Color.WHITE);canvas.drawText(text,left+6,top+20,paint);}
@@ -30,12 +30,12 @@ final class SeatMonitor {
   synchronized void resume(){active=true;}
   synchronized void suspendObservation(){timeline.pause();lastStatistic=0;persist();}
   synchronized void pause(){active=false;previewUntil=0;detection(false);version++;timeline.pause();persist();}
-  synchronized void enabled(boolean value){enabled=value;version++;timeline.pause();prefs().edit().putBoolean("enabled",value).apply();message=value?(learner.ready()?"开始观察":"先确认空位和在位"):"已暂停";persist();}
+  synchronized void enabled(boolean value){enabled=value;version++;timeline.pause();prefs().edit().putBoolean("enabled",value).apply();message=value?(learner.ready()?"开始观察":"开始观察"):"已暂停";persist();}
   synchronized void preview(boolean value){previewUntil=value?SystemClock.elapsedRealtime()+15000:0;}
-  synchronized void cameraChanged(String id){if(id.equals(cameraId))return;cameraId=id;learner.reset();timeline.pause();version++;latest=null;preview="";message="相机已更换，请重新确认空位和在位";persist();}
+  synchronized void cameraChanged(String id){if(id.equals(cameraId))return;cameraId=id;learner.reset();timeline.pause();version++;latest=null;preview="";message="相机已更换，开始观察";persist();}
   synchronized void region(float left,float top,float right,float bottom){
     if(!Float.isFinite(left)||!Float.isFinite(top)||!Float.isFinite(right)||!Float.isFinite(bottom)||left<0||top<0||right>1||bottom>1||right-left<.15||bottom-top<.15)return;
-    roi=new float[]{left,top,right,bottom};version++;learner.reset();timeline.pause();latest=null;message="区域已更新，请确认空位和在位";persist();
+    roi=new float[]{left,top,right,bottom};version++;learner.reset();timeline.pause();latest=null;message="区域已更新，开始观察";persist();
   }
   synchronized String label(String kind){try{
     if(!active||!usable||latest==null||SystemClock.elapsedRealtime()-latestAt>5000)return new JSONObject().put("accepted",false).put("message","等清晰的新画面出现后再确认").toString();
@@ -44,10 +44,11 @@ final class SeatMonitor {
     return new JSONObject().put("accepted",true).put("message",message).toString();
   }catch(JSONException e){return "{}";}}
   synchronized JSONObject annotation(long wall,long mono){try{
-    long age=latestAt==0?Long.MAX_VALUE:Math.max(0,mono-latestAt);int state=active&&enabled&&learner.ready()?timeline.current(mono):-1;
+    long age=latestAt==0?Long.MAX_VALUE:Math.max(0,mono-latestAt);int state=active&&enabled?timeline.current(mono):-1;
     java.text.SimpleDateFormat iso=new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX",Locale.US);
     return new JSONObject().put("schemaVersion",2).put("capturedAt",wall).put("capturedAtIso",iso.format(new java.util.Date(wall))).put("captureUptime",mono).put("timezone",TimeZone.getDefault().getID()).put("seatState",state==1?"occupied":state==0?"empty":"unknown").put("annotationSource","model_estimate").put("manualGroundTruth",false).put("observedAt",lastWall).put("observationAgeMs",latestAt==0?JSONObject.NULL:age).put("personScore",age<=60000?personScore:JSONObject.NULL).put("calibrated",learner.ready()).put("roi",array(roi)).put("model","EfficientDet-Lite0");
   }catch(JSONException e){return new JSONObject();}}
+  synchronized float[] region(){return roi.clone();}
   String frame(){return preview;}
   synchronized boolean reserve(long now){if(!active||busy||(!enabled&&!previewing()&&!detecting())||now-lastInference<(detecting()?500:previewing()?2000:18000))return false;busy=true;lastInference=now;return true;}
   void cancelFrame(){busy=false;}
@@ -64,7 +65,7 @@ final class SeatMonitor {
         int guess=features==null?-1:learner.predict(features,score);
         if(enabled&&(lastStatistic==0||now-lastStatistic>=18000)){lastStatistic=now;timeline.sample(guess,now,wall);if(timeline.current(now)==guess&&guess>=0&&learner.adapt(guess,features,score))Log.d("BloubSeat","ADAPT state="+guess);persist();}
         if(features==null)message="画面偏暗或被遮挡，暂不统计";
-        else if(learner.ready())message=guess<0?"画面待确认":"正在观察";
+        else message="正在观察";
         Log.i("BloubSeat","INFERENCE person="+score+" guess="+guess+" state="+timeline.current(now)+" ms="+inferenceMs);
       }
     }catch(Throwable e){modelStatus="模型暂不可用";message="暂不统计，请检查相机";synchronized(this){timeline.pause();}Log.w("BloubSeat","Inference",e);}
@@ -80,14 +81,16 @@ final class SeatMonitor {
   }
   synchronized String snapshot(int days){try{
     long now=System.currentTimeMillis(),mono=SystemClock.elapsedRealtime();if(mono-lastRetentionSweep>=3600000||lastRetentionSweep==0){persist();lastRetentionSweep=mono;}Calendar today=Calendar.getInstance();today.setTimeInMillis(now);today.set(Calendar.HOUR_OF_DAY,0);today.set(Calendar.MINUTE,0);today.set(Calendar.SECOND,0);today.set(Calendar.MILLISECOND,0);
-    int state=active&&enabled&&learner.ready()?timeline.current(mono):-1;
-    String status=!enabled?"未开启":!learner.ready()?"等待工位校准":state==1?"座位有人":state==0?"座位无人":latestAt==0||mono-latestAt>60000?"未观察":"待确认";
+    int state=active&&enabled?timeline.current(mono):-1;
+    String reason=!enabled?"disabled":!active?"background":latestAt==0?"initializing":mono-latestAt>60000?"stale":!usable?"invalid_frame":state<0?"confirming":"observed";
+    String status=reason.equals("disabled")?"未开启":reason.equals("background")?"后台暂停":reason.equals("initializing")?"等待相机画面":reason.equals("stale")?"暂未观察":reason.equals("invalid_frame")?"画面不可用":state==1?"座位有人":state==0?"座位无人":"正在确认";
+
     JSONArray daily=new JSONArray();SimpleDateFormat format=new SimpleDateFormat("yyyy-MM-dd",Locale.US);
     for(int j=Math.max(1,Math.min(90,days))-1;j>=0;j--){Calendar begin=(Calendar)today.clone();begin.add(Calendar.DATE,-j);Calendar end=(Calendar)begin.clone();end.add(Calendar.DATE,1);long a=begin.getTimeInMillis(),b=end.getTimeInMillis();long[] t=timeline.totals(a,b);JSONArray intervals=new JSONArray();long first=0,last=0;
       for(PresenceTimeline.Segment seg:timeline.segments){long start=Math.max(a,seg.start),finish=Math.min(b,seg.end);if(finish<=start)continue;if(seg.state==1){if(first==0)first=start;last=finish;}intervals.put(new JSONObject().put("start",start).put("end",finish).put("state",seg.state==1?"occupied":seg.state==0?"empty":"unknown"));}
       daily.put(new JSONObject().put("date",format.format(begin.getTime())).put("start",a).put("end",b).put("occupiedMs",t[2]).put("emptyMs",t[1]).put("uncertainMs",t[0]).put("observedMs",t[0]+t[1]+t[2]).put("firstOccupiedAt",first).put("lastOccupiedAt",last).put("intervals",intervals));
     }
-    return new JSONObject().put("detectionEnabled",detecting()).put("enabled",enabled).put("active",active).put("state",state==1?"occupied":state==0?"empty":"unknown").put("status",status).put("ready",learner.ready()).put("emptyConfirmed",learner.emptyLabels>0).put("occupiedConfirmed",learner.occupiedLabels>0).put("message",message).put("cameraId",cameraId).put("roi",array(roi)).put("lastObservedAt",lastWall).put("personScore",personScore).put("inferenceMs",inferenceMs).put("model",modelStatus).put("adaptations",learner.adaptations).put("retentionDays",90).put("sampleIntervalSeconds",20).put("timezone",TimeZone.getDefault().getID()).put("deviceTime",now).put("days",daily).toString();
+    return new JSONObject().put("detectionEnabled",detecting()).put("enabled",enabled).put("active",active).put("state",state==1?"occupied":state==0?"empty":"unknown").put("status",status).put("stateReason",reason).put("requiresCalibration",false).put("ready",learner.ready()).put("emptyConfirmed",learner.emptyLabels>0).put("occupiedConfirmed",learner.occupiedLabels>0).put("message",message).put("cameraId",cameraId).put("roi",array(roi)).put("lastObservedAt",lastWall).put("personScore",personScore).put("inferenceMs",inferenceMs).put("model",modelStatus).put("adaptations",learner.adaptations).put("retentionDays",90).put("sampleIntervalSeconds",20).put("timezone",TimeZone.getDefault().getID()).put("deviceTime",now).put("days",daily).toString();
   }catch(JSONException e){return "{}";}}
   private JSONArray array(float[] f)throws JSONException{JSONArray a=new JSONArray();if(f!=null)for(float v:f)a.put(v);return a;}
   private float[] vector(JSONObject d,String name,int length)throws JSONException{JSONArray a=d.optJSONArray(name);if(a==null||a.length()!=length)return null;float[] f=new float[length];for(int i=0;i<length;i++){f[i]=(float)a.getDouble(i);if(!Float.isFinite(f[i])||Math.abs(f[i])>2)return null;}return f;}
