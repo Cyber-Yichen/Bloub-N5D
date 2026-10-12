@@ -1,77 +1,94 @@
-# 监控录像与对象存储 · 0.9.1
+# 监控录像与对象存储 · 0.9.2
 
-网页进入「监控」配置，设备图库只显示「监控」开关。默认关闭录像和自动上传。开启后保持 Bloub 在前台，录制无声 H.264 / MP4 分段；相机关闭或权限未授予时不会录制。设备切后台停止录像与感知，已完成的分段保留。
+网页「监控」配置，设备图库提供监控开关。默认关闭录像与自动上传。保持应用前台，实际录制 H.264 / MP4；可选 AAC 16 kHz 单声道麦克风音轨。切后台停止录制并保留已完成分段。监控与照片保存互斥，网页与设备切换前提醒；关闭监控后需自行重新开启照片保存。
 
-## 连接方式
+## 存储连接
 
-| 位置 | 类型 | 地址示例 | 其他字段 |
-| --- | --- | --- | --- |
-| 群晖 / 威联通等 NAS | WebDAV | `https://nas.example.com:5006/录像` | NAS 用户名、密码；先启用 WebDAV，并授予目录创建与写入权限 |
-| MinIO / 提供 S3 服务的 NAS | S3 | `https://s3.example.com:9000` | bucket、地域、访问 ID、密钥；使用 path-style 请求 |
-| 阿里云 OSS | OSS | 自动生成 | 存储桶、地域、AccessKey ID / Secret；可填 STS token |
-| 腾讯云 COS | COS | 自动生成 | 完整存储桶（含 APPID）、地域、SecretId / SecretKey；可填临时 token |
+| 类型 | 输入 | 凭证 |
+| --- | --- | --- |
+| NAS · WebDAV | NAS WebDAV 地址、存放目录；不填地域或存储桶 | 用户名、密码 |
+| S3 / MinIO | 服务地址、存储桶、目录；高级签名地域默认 us-east-1 | AccessKey ID、Secret、可选临时令牌 |
+| 阿里云 OSS | 存储桶、地域、目录；自动生成地址，高级项可填已绑定的 HTTPS 自定义域名 | AccessKey ID、Secret、可选 STS token |
+| 腾讯云 COS | 完整存储桶（含 APPID）、地域、目录；自动生成地址 | SecretId、SecretKey、可选临时 token |
 
-NAS 通过 WebDAV 或 S3 适配，未实现直接 SMB / NFS 挂载。TrueNAS 需另行提供 S3 服务，例如运行 MinIO。NAS WebDAV 不使用存储桶或地域。S3 仍需存储桶，签名地域默认 us-east-1，放在高级配置。OSS / COS 由存储桶与地域生成标准 HTTPS 地址，不要求手输地址；目录统一填写「存放目录」。OSS 自定义域名可在高级配置填写：新 OSS 用户的部分中国内地数据 API 受官方域名策略限制，需使用已绑定的 CNAME。HTTPS 使用系统证书与主机名验证，不接受任意自签名证书。只有明确打开「允许局域网 HTTP」才接受 HTTP 地址。
+NAS 需启用 WebDAV 或提供 S3 服务；不直接挂载 SMB/NFS。S3 使用 path-style。HTTPS 验证系统证书和主机名；NAS/S3 的局域网 HTTP 需显式允许。请求拒绝重定向，避免凭证随跳转发送。
 
-密钥和临时令牌由 Android Keystore AES-GCM 加密后存储。读取接口只返回 secretConfigured / tokenConfigured，不返回凭证。保存时密码留空代表保留；「清除」才删除。访问 ID 和 NAS 用户名属于连接配置，会在网页显示。此局域网网页本身使用 HTTP，配置凭证时应使用可信局域网，勿把服务映射到公网。
+各服务独立保留配置与凭证，切换不会清除其他服务。密钥与令牌使用 Android Keystore AES-GCM 存储；API 只返回 secretConfigured / tokenConfigured。留空保留，clearSecret / clearToken 才清除。网页本身为局域网 HTTP，应在可信网络填写凭证，不映射公网。
 
-## 分段、队列与清理
+### 测试连接
 
-- 分段默认 60 秒，可调 15–300 秒。分段切换会短暂停顿；没有合成为无缝长视频。
-- 完成的 MP4 及同名 `.mp4.json` 存入设备应用私有 `files/monitor-video/`。拍摄朝向写入 MP4 rotation；音频不录制。
-- 默认本地容量预算 1024 MiB，可调 128–8192 MiB。开始下一段前预留预计编码空间，并检查设备剩余空间；不足时暂停，保留待上传文件。
-- 开启自动上传后，每十五秒检查队列，依次上传视频与 JSON；两者都成功才将本机记录标为已上传。失败退避 30 秒至 1 小时；可点「立即重试上传」。上传配置变更后重新安排重试。
-- 上传没有成功的分段不自动删除。已上传分段默认本机再保留一天，可调 1–7 天。网页允许手动删除本机分段；删除不作用于 NAS 或云端副本。
-- 对象路径为 `<前缀>/<UTC 开始日期>/<分段名>.mp4`；默认前缀 bloub。重复重试使用相同路径覆盖，避免产生多个副本。更改前缀、日期或存储位置会产生新位置的副本。
-- 异常退出留下的临时片段，下次启动尝试恢复可读 MP4；未能完成容器的片段无法保证恢复。
-- 开启监控是明确的连续录像操作，因此不受自动照片的夜间休息规则限制。停止网页实时画面不会停止已启用的监控；照片仍按工位状态间隔保存。
+S3、OSS、COS 的按钮使用当前填写的草稿；密钥留空时使用该服务已保存的凭证，不保存草稿、不更改活动服务。以真实签名上传小 JSON 到 `<prefix>/.bloub-connection-test/<随机ID>.json`，再尝试删除。结果分别表示上传成功、删除成功或清理失败；失败不伪装成功。
 
-云端上传签名使用 OSS V4、COS XML V5、S3 Signature V4。云签名时间会尝试参考服务端 HTTPS Date 头，不修改设备时钟；仍需保持设备时间正确。请求拒绝重定向；连接、读取及整次上传有超时限制。
+至少需要创建对象权限。删除被拒绝时仍报告上传通过，并返回测试对象路径供清理。开启云端版本控制的存储桶可能保留对象历史版本或删除标记，应按存储桶生命周期管理；测试不改变云端版本策略。
+
+## 录像设置
+
+| 字段 | 默认 | 范围 / 含义 |
+| --- | --- | --- |
+| segmentSeconds | 60 | 15–300 秒，每段独立 MP4 |
+| storageMiB | 1024 | 128–8192 MiB，本机容量预算 |
+| localDays | 1 | 1–7 天，上传成功后本机保留时长 |
+| recordAudio | false | 保存麦克风 AAC 音轨，需要麦克风权限 |
+| timestamp | true | 将设备本地日期与时间烧录到画面 |
+| mirror | false | 镜像录像画面与几何叠加 |
+| rotationEnabled / rotation | false / 0 | 基于转正画面再顺时针旋转 0/90/180/270 度 |
+| overlayObjects | false | 烧录物体检测框 |
+| overlayFaces / overlayHands / overlayHolistic | false | 烧录面部、手部、全身关键点与框 |
+| overlayYamnet | false | 烧录当前声音类别与分数；需要麦克风，但不自动保存音轨 |
+| motionOnly | false | 只保存画面变化前后窗口 |
+| motionWindowMinutes | 1 | 1–30 分钟，变化前后各保留 X 分钟 |
+| autoUpload | false | 后台队列自动上传 |
+| uploadScheduleEnabled / uploadTime | false / 20:00 | 每日按设备本地 HH:mm 开始处理队列 |
+
+旋转与镜像作用于实际编码像素，物体框、关键点同样变换；最终时间戳、声音文字与检测标签保持正常朝向。实时预览和录制叠加独立选择。关键点只显示当前模型结果，不识别身份或情绪、不参与工位学习或宠物互动。模型异步处理最新帧，结果过期后隐藏；录像不要求逐帧推理。
+
+录像和 YAMNet 共用一条 PCM 输入，避免重复占用麦克风。音轨封装失败时保留视频并标记 audioMissing，不能据开关推断实际有音轨。
+
+## 画面变化、分段与保留
+
+- motionOnly=false 保存完整分段。切换分段会短暂停顿，不是无缝连续视频。
+- motionOnly=true 连续编码到私有滚动缓冲；静止缓冲不出现在视频列表、不上传。干净相机画面的局部亮度变化触发窗口，补偿整体曝光变化，叠加文字和检测框不会触发。
+- 触发后保留前后各 X 分钟；接近的变化合并，持续变化延长结束时间。应用刚开始、休眠或分段间隙没有历史帧，不能补出不存在的前段。按 H.264 关键帧裁剪，起点可能比指定边界稍早。
+- 正常录像与变化片段保存到应用私有 `files/monitor-video/`，附带同名 `.mp4.json`。临时缓冲不通过公开文件接口暴露。
+- 开始新段前预留预计空间并检查剩余容量；满时暂停，待上传文件不自动删。变化窗口较大时要求至少 `X*16+32 MiB` 的容量预算。
+- 已上传分段按 localDays 清理；未成功上传不自动删除。网页手动删除只作用本机，不删除 NAS/云端副本。
+- 异常退出后尝试恢复已完成可读 MP4；无法完成容器的片段不保证恢复。更换配置在下一相机会话/分段生效，当前分段记录自身配置快照。
+
+## 上传
+
+每 15 秒检查队列，逐段上传 MP4 与 JSON，两者成功才标记已上传。失败退避 30 秒至 1 小时；新设置重置重试状态。定时上传按本地时间开始处理已有队列，全部完成后等待下一天；失败队列继续重试。「立即上传」可跳过定时并处理当前队列，也可在自动上传关闭时手动执行一次。
+
+路径为 `<prefix>/<UTC开始日期>/<分段名>.mp4`，重试使用相同路径覆盖。更换存储位置会产生新位置的副本。签名使用 S3 Signature V4、OSS V4、COS XML V5；尝试参考服务端 Date，不修改设备时钟。
 
 ## API
 
-所有 POST 使用六位访问码的 Bearer 请求头与同源网页请求。配置请求使用 `Content-Type: application/json`，正文最多 16 KiB。示例地址、账号和密钥均为占位符。
+沿用六位 Bearer 鉴权与同源 POST，配置 JSON 最大 16 KiB。
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
-| GET | `/api/monitor` | 开关、录制状态、上传状态、待上传数、容量、公开配置、最近 100 段 |
-| POST | `/api/settings` | `{"monitorEnabled":true,"camera":true}` 开启；false 停止 |
-| POST | `/api/monitor/config` | 更新配置，未提供的字段保留 |
-| POST | `/api/monitor/retry` | 重新安排上传 |
-| GET | `/api/videos/{id}.mp4` | 下载已完成的视频 |
-| POST | `/api/videos/{id}.mp4/delete` | 删除本机视频与标签 |
+| GET | `/api/monitor` | 实际录制/上传状态、容量、缓冲段数、配置、profiles 和最近 100 段 |
+| POST | `/api/settings` | `{ "monitorEnabled": true, "camera": true }` 开启 |
+| POST | `/api/monitor/config` | 保存指定 provider 的配置和凭证，未提供字段保留 |
+| POST | `/api/monitor/test` | 测试当前草稿的 S3/OSS/COS 上传与清理 |
+| POST | `/api/monitor/retry` | 手动安排上传并清除失败退避 |
+| GET | `/api/videos/{id}.mp4` | 已完成视频；支持单个 HTTP Range、206 与 416 |
+| GET | `/api/videos/{id}.mp4?download=1` | 附件下载 |
+| POST | `/api/videos/{id}.mp4/delete` | 删除本机视频及其标签 |
 
-配置字段：provider、endpoint、endpointOverride、bucket、region、prefix、accessId、username、autoUpload、allowHttp、segmentSeconds、storageMiB、localDays；写入另外接受 secret、token、clearSecret、clearToken。非法类型、范围、地址和路径返回 400；凭证不会放进 URL。
+除上述录像/上传字段，还接受 provider、endpoint、endpointOverride、bucket、region、prefix、accessId、username、allowHttp；写入接受 secret、token、clearSecret、clearToken。严格校验类型、整数范围、时间、路径及服务地址，非法请求返回 400。GET 不返回密钥/令牌。
+
+测试成功示例：
 
 ```json
-{
-  "provider": "webdav",
-  "endpoint": "https://nas.example.com:5006/录像",
-  "username": "<NAS 用户名>",
-  "secret": "<NAS 密码>",
-  "prefix": "bloub",
-  "autoUpload": true,
-  "allowHttp": false,
-  "segmentSeconds": 60,
-  "storageMiB": 1024,
-  "localDays": 1
-}
+{"connected":true,"uploadVerified":true,"cleanup":true,"message":"连接成功，上传验证通过"}
 ```
 
-`recording` 表示实际录制，`enabled` 只表示请求开启；两者不相等时查看 status。videos[].metadata 包含 startedAt、endedAt、durationMs、silent、uploaded、uploadedAt 等字段；崩溃恢复的记录可能缺少开始/结束时间，并标记 recovered。
+删除失败返回 cleanup=false、testObject 和说明；上传失败返回 400、connection_test_failed 和简短原因。地址无法解析、连接超时、HTTPS 验证失败、服务权限拒绝分别报告。
 
-## 本版验证范围
+videos[].metadata 包含 schemaVersion、startedAt、endedAt、durationMs、silent、audioMissing、uploaded、options；变化录像还含 motionEvent、requestedStart、requestedEnd；恢复记录含 recovered。options 是该段配置快照，不包含 secret/token。
 
-在 N5D 相机 2 实测分段录像、网页下载、关闭预览不停止录像，以及本机 WebDAV 模拟端的 HTTP 503 保留、重试和逐字节一致性。纯 Java 校验独立对照官方 SDK 的九个签名样例，包括中文/空格路径和临时令牌，并检查 JPEG XMP 与 WebDAV 状态码处理。
+## 验证与限制
 
-没有提供实际 OSS/COS 账号及 NAS 环境，因此未验证真实存储桶权限、云服务区域配置或具体 NAS 固件。使用前在网页确认首次上传完成；本应用不是安防录像系统，也未提供网络故障下的无限存储保证。
+见 [0.9.2 实测](verification-0.9.2.md)。没有真实云端账号或 NAS 固件环境，实测模拟服务和签名不等于验证实际存储桶权限。本应用依赖前台运行和有限本机容量，不提供无限存储或安防级可用性保证。
 
-参考：[OSS 签名](https://www.alibabacloud.com/help/en/oss/include-signatures-in-the-authorization-header)、[COS 签名](https://www.tencentcloud.com/document/product/436/7778)、[S3 Signature V4](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html)。
-
-## 0.9.1 配置迁移
-
-OSS / COS 请求只需 provider、bucket、region，不需 endpoint；设备生成地址并校验。OSS 可用 endpointOverride 指定已绑定的 HTTPS 自定义域名，不能含路径、查询或用户信息。旧官方域名配置从域名恢复地域。WebDAV 规范化后 bucket / region 为空；S3 允许局域网 HTTP 的既有显式开关保持。
-
-更换存储类型后须使用对应凭证：后台清除上一类型的密码和临时令牌，防止把 NAS 密码用于云签名；网页同时关闭自动上传，填写并保存后再打开。云签名升级到 OSS V4，三组新样例独立对照官方 Python SDK，包括中文/空格、百分号、临时令牌。
-
-参考：[群晖 WebDAV](https://kb.synology.com/en-global/DSM/help/WebDAVServer/webdav_server)、[OSS 地域和域名](https://www.alibabacloud.com/help/en/oss/user-guide/regions-and-endpoints)、[OSS V4](https://help.aliyun.com/zh/oss/developer-reference/recommend-to-use-signature-version-4)、[OSS V1 停用公告](https://www.alibabacloud.com/en/notice/notice_on_the_discontinuation_of_the_oss_v1_signature_algorithm_40f)。
+参考：[S3 DeleteObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html)、[OSS DeleteObject](https://www.alibabacloud.com/help/en/oss/developer-reference/deleteobject)、[COS 签名](https://www.tencentcloud.com/document/product/436/7778)、[群晖 WebDAV](https://kb.synology.com/en-global/DSM/help/WebDAVServer/webdav_server)、[OSS 地域](https://www.alibabacloud.com/help/en/oss/user-guide/regions-and-endpoints)。

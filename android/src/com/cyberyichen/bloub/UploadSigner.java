@@ -27,19 +27,21 @@ final class UploadSigner {
     String canonical=token.isEmpty()?"":"x-oss-security-token:"+token+"\n";
     return "OSS "+id+":"+base64(hmac("HmacSHA1",utf(secret),"PUT\n"+md5+"\n"+mime+"\n"+date+"\n"+canonical+"/"+bucket+"/"+key));
   }
-  static String oss4(String bucket,String object,Map<String,String> headers,String region,String id,String secret,long now)throws GeneralSecurityException{
+  static String oss4(String bucket,String object,Map<String,String> headers,String region,String id,String secret,long now)throws GeneralSecurityException{return oss4("PUT",bucket,object,headers,region,id,secret,now);}
+  static String oss4(String method,String bucket,String object,Map<String,String> headers,String region,String id,String secret,long now)throws GeneralSecurityException{
     TreeMap<String,String> signed=new TreeMap<>();for(Map.Entry<String,String> h:headers.entrySet()){String k=h.getKey().toLowerCase(Locale.US);if(k.startsWith("x-oss-")||k.equals("content-type")||k.equals("content-md5"))signed.put(k,h.getValue().trim());}
     StringBuilder canonicalHeaders=new StringBuilder();for(Map.Entry<String,String> h:signed.entrySet())canonicalHeaders.append(h.getKey()).append(':').append(h.getValue()).append('\n');
     String day=date(now,"yyyyMMdd"),scope=day+"/"+region+"/oss/aliyun_v4_request";
-    String canonical="PUT\n"+encode("/"+bucket+"/"+object,true)+"\n\n"+canonicalHeaders+"\n\nUNSIGNED-PAYLOAD";
+    String canonical=method+"\n"+encode("/"+bucket+"/"+object,true)+"\n\n"+canonicalHeaders+"\n\nUNSIGNED-PAYLOAD";
     String sign="OSS4-HMAC-SHA256\n"+signed.get("x-oss-date")+"\n"+scope+"\n"+hash("SHA-256",canonical);
     byte[] k=hmac("HmacSHA256",utf("aliyun_v4"+secret),day);k=hmac("HmacSHA256",k,region);k=hmac("HmacSHA256",k,"oss");k=hmac("HmacSHA256",k,"aliyun_v4_request");
     return "OSS4-HMAC-SHA256 Credential="+id+"/"+scope+", Signature="+hex(hmac("HmacSHA256",k,sign));
   }
-  static String cos(String path,Map<String,String> headers,String id,String secret,long start,long end)throws GeneralSecurityException{
+  static String cos(String path,Map<String,String> headers,String id,String secret,long start,long end)throws GeneralSecurityException{return cos("PUT",path,headers,id,secret,start,end);}
+  static String cos(String method,String path,Map<String,String> headers,String id,String secret,long start,long end)throws GeneralSecurityException{
     TreeMap<String,String> sorted=new TreeMap<>();for(Map.Entry<String,String> e:headers.entrySet())sorted.put(encode(e.getKey().toLowerCase(Locale.US),false).toLowerCase(Locale.US),encode(e.getValue().trim(),false));
     StringBuilder canonical=new StringBuilder(),names=new StringBuilder();for(Map.Entry<String,String> e:sorted.entrySet()){if(names.length()>0){names.append(';');canonical.append('&');}names.append(e.getKey());canonical.append(e.getKey()).append('=').append(e.getValue());}
-    String time=start+";"+end,key=hex(hmac("HmacSHA1",utf(secret),time));String sign="sha1\n"+time+"\n"+hash("SHA-1","put\n"+path+"\n\n"+canonical+"\n")+"\n";
+    String time=start+";"+end,key=hex(hmac("HmacSHA1",utf(secret),time));String sign="sha1\n"+time+"\n"+hash("SHA-1",method.toLowerCase(Locale.US)+"\n"+path+"\n\n"+canonical+"\n")+"\n";
     return "q-sign-algorithm=sha1&q-ak="+id+"&q-sign-time="+time+"&q-key-time="+time+"&q-header-list="+names+"&q-url-param-list=&q-signature="+hex(hmac("HmacSHA1",utf(key),sign));
   }
 }

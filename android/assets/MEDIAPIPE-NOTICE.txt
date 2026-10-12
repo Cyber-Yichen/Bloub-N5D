@@ -1,0 +1,21 @@
+MediaPipe Tasks 0.10.26 and Face/Hand/Holistic Landmarker model bundles
+Copyright The MediaPipe Authors. Apache License 2.0.
+https://github.com/google-ai-edge/mediapipe
+https://ai.google.dev/edge/mediapipe/solutions/vision
+See MEDIAPIPE-LICENSE.txt.
+
+This distribution replaces TasksStatsLoggerFactory with the upstream dummy
+stats logger and omits remote stats transport. Inference stays on the device.
+The full Protobuf Java 4.26.1 runtime is used to satisfy the published Holistic
+Any.Builder ABI. See PROTOBUF-LICENSE.txt (BSD 3-Clause).
+
+Additional Apache-2.0 runtime libraries, covered by the included Apache license:
+Guava 33.4.8-android and failureaccess 1.0.3, Copyright Google LLC;
+https://github.com/google/guava
+Flogger 0.6 / flogger-system-backend 0.6, Copyright Google LLC;
+https://github.com/google/flogger
+AndroidX annotation 1.1.0, Copyright The Android Open Source Project;
+https://android.googlesource.com/platform/frameworks/support
+
+Pinned origins and digests are recorded in android/dependencies.json and
+android/dependencies.sha256 in the project source.

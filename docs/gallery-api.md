@@ -1,6 +1,6 @@
 # 局域网图库与相机 API
 
-适用于 Bloub-N5D 0.9.1。照片保留七天；音频不保存，人脸分析暂不启用，当前不识别身份或真实情绪。工位时间统计与流式检测框见 [工位 API](presence-api.md)。
+适用于 Bloub-N5D 0.9.2。照片默认保留七天，可调整。日常感知不保存音频；监控可选择保存音轨。可选关键点检测不识别身份或真实情绪。工位时间统计与流式检测框见 [工位 API](presence-api.md)。
 
 ## 打开图库
 
@@ -20,8 +20,8 @@
 - **拍一张**：保存当前完整预览尺寸的 JPEG 和元数据；不开启实时画面也能拍照。
 - **停止实时画面**：停止网页预览并恢复自动观察规则；已启用的监控录像继续。
 - 网页隐藏或离开时请求停止预览；连接意外断开后，相机最多约 90 秒自动停止。设备切后台会立即停止。
-- 网页手动操作可在夜间使用；自动拍摄遵守设备设置中的夜间时段。默认 23:00–08:00，有近期明显声音时允许短时观察。需要开启麦克风；夜间无声音时不拍摄。
-- 夜间时段按设备本地时间计算，可修改开始和结束时间；相同时表示不设置休息时段。拍照间隔按确认后的工位状态设置：有人默认一分钟，无人十分钟，未知两分钟；观察与拍照分别调度，不会每次模型推理都保存照片。
+- 网页手动操作可在夜间使用；自动拍摄遵守设备设置中的夜间时段。默认 23:00–08:00，有近期明显声音时允许短时观察。自动保存夜间默认关闭，由 nightSaving 控制；手动拍照不受夜间规则限制。
+- 夜间时段按设备本地时间计算，可修改开始和结束时间；相同时表示不设置休息时段。拍照间隔按确认后的工位状态设置：有人默认一分钟，无人十分钟，未知五分钟；观察与拍照分别调度，不会每次模型推理都保存照片。
 
 N5D 相机 2 没有声明 JPEG 输出，相机 3 的 JPEG 会话实测会卡住。本版使用完整预览尺寸编码 JPEG，质量参数 95：相机 2 为 960×1280，相机 3 为 1280×960。旧照片保留原清晰度。相机 2 使用画面亮度驱动的自动测光，动态调整快门和 ISO，限制高光并保留 30 fps 的传感器帧周期；相机 3 使用硬件自动曝光并按区域亮度修正曝光补偿。网页、原图、推理和录像使用同一相机会话设置。通道选择可在设备或网页修改。
 
@@ -46,7 +46,7 @@ curl -H "Authorization: Bearer $N5D_CODE" "$N5D_URL/api/photos"
 | GET | `/api/photos?before=<游标>` | 每页最多十二张照片 |
 | GET | `/api/photos/{id}/image` | 原尺寸 JPEG |
 | GET | `/api/photos/{id}/image?download=1` | 带附件下载头的 JPEG |
-| GET | `/api/photos/{id}/thumbnail` | 缩略图；旧记录回退原图 |
+| GET | `/api/photos/{id}/thumbnail` | 缩略图；旧记录首次按需生成 |
 | GET | `/api/photos/{id}/metadata` | 单张照片元数据 |
 | GET | `/api/archive.zip` | 全部未过期照片及 manifest.json |
 | GET | `/api/camera` | 相机状态、当前通道、最近保存的照片 ID |
@@ -152,3 +152,34 @@ POST /api/photos/{id}/delete 删除单张，POST /api/photos/clear 清空本机�
 GET `/api/photos?page=1&pageSize=24` 使用页码分页；page 为正整数（最大 1000000），pageSize 为 1–96。超过末页会回到末页；空图库返回第 1 / 1 页与空 items。返回 page、pageSize、totalPages、total。日期与工位状态筛选同样生效。
 
 未提供 page 或 page=0 时仍支持旧的 before 游标，默认 pageSize=12。使用页码时 before 不参与筛选。非法分页参数返回 HTTP 400。新增照片或删除照片后页数重新计算。
+
+## 0.9.2 访问码、观察与保留设置
+
+`GET /api/access-code` 返回当前六位访问码。POST 同一路径接受单独 `{ "action": "refresh" }` 或 `{ "code": "001234" }`；必须使用当前 Bearer，访问码只接受六位 ASCII 数字。更新后响应包含新 key 与地址，其他已连接客户端关闭，旧 Bearer 失效。API 不在日志中记录访问码。
+
+`POST /api/settings` 新增字段：
+
+| 字段 | 默认 | 范围 / 含义 |
+| --- | --- | --- |
+| photoRetentionDays | 7 | 1–365 天，缩短后清理过期照片 |
+| presenceRetentionDays | 90 | 1–365 天，缩短后清理较早工位记录 |
+| observationEnabled | true | 自动观察开关 |
+| observationMinutes | 1 | 1–1440 分钟，独立于照片保存频率 |
+| occupiedSaving / emptySaving / unknownSaving | true | 对应状态是否保存照片 |
+| occupiedMinutes / emptyMinutes / unknownMinutes | 1 / 10 / 5 | 1–1440 分钟，保存间隔 |
+| nightSaving | false | 夜间是否自动保存照片 |
+
+`gallerySaving` 与 `monitorEnabled` 互斥：开启其中之一会关闭另一项；单次请求同时 true 返回 400。关闭监控不会自动重新开启照片，需显式开启。手动拍照仍需 gallerySaving=true。
+
+缩略图使用私有条件缓存（ETag / 304），仍先校验访问码。照片列表建立可失效索引，保存与删除后更新；每页仅复制当前页元数据。进入其他页面会停止预览并取消过时的图库请求。
+
+### 可选实时叠加
+
+`GET /api/landmarks` 返回启用开关、状态、关键点数量与最近捕获启动时间。独立控制：
+
+- `POST /api/camera/landmarks/face/on` 或 `/off`
+- `POST /api/camera/landmarks/hand/on` 或 `/off`
+- `POST /api/camera/landmarks/holistic/on` 或 `/off`
+- `POST /api/camera/yamnet/on` 或 `/off`
+
+面部/手部/全身开关直接绘入 MJPEG；全身模型包含身体、面部和双手。实时叠加与录制叠加开关相互独立；停止预览清理实时选择，录像保持其已保存的选择。声音标签需要启用麦克风，或监控当前需要麦克风，否则 409。检测结果过期后不继续显示。原始图库照片不烧录这些叠加。

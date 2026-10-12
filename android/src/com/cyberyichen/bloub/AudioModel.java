@@ -10,6 +10,7 @@ import org.tensorflow.lite.nnapi.NnApiDelegate;
 
 /** Official YAMNet mobile classifier. Raw samples and inference remain in memory. */
 final class AudioModel implements AutoCloseable {
+    private final android.content.Context contextForLabels;
     private Interpreter interpreter;
     private ByteBuffer modelBuffer;
     private NnApiDelegate delegate;
@@ -17,6 +18,7 @@ final class AudioModel implements AutoCloseable {
     private final Map<Integer,Object> outputs=new HashMap<>();
     final int samples;
     AudioModel(Context context)throws IOException {
+        contextForLabels=context.getApplicationContext();
         ByteArrayOutputStream data=new ByteArrayOutputStream();
         try(InputStream stream=context.getAssets().open("yamnet.tflite")){
             byte[] buffer=new byte[8192];int n;while((n=stream.read(buffer))!=-1)data.write(buffer,0,n);
@@ -52,6 +54,7 @@ final class AudioModel implements AutoCloseable {
         }
         model.rewind();return new Interpreter(model,new Interpreter.Options().setNumThreads(2));
     }
+    volatile String label="";volatile float confidence;private String[] categories;
     float[] classify(short[] ring,int cursor){
         input.clear();for(int i=0;i<samples;i++)input.putFloat(ring[(cursor+i)%samples]/32768f);input.rewind();
         for(Object b:outputs.values())((ByteBuffer)b).clear();
@@ -65,6 +68,8 @@ final class AudioModel implements AutoCloseable {
             interpreter.runForMultipleInputsOutputs(new Object[]{input},outputs);
         }
         ByteBuffer result=(ByteBuffer)outputs.get(0);result.rewind();FloatBuffer scores=result.asFloatBuffer();
+        if(categories==null){java.util.ArrayList<String> names=new java.util.ArrayList<>();try(java.io.BufferedReader reader=new java.io.BufferedReader(new java.io.InputStreamReader(contextForLabels.getAssets().open("yamnet_class_map.csv"),"UTF-8"))){String line;reader.readLine();while((line=reader.readLine())!=null){String[] parts=line.split(",",3);names.add(parts.length==3?parts[2].replace("\"",""):"声音");}}catch(Exception ignored){}categories=names.toArray(new String[0]);}
+        int best=0;for(int i=1;i<scores.limit();i++)if(scores.get(i)>scores.get(best))best=i;confidence=scores.get(best);label=best<categories.length?categories[best]:"声音";
         // Class 132 is Music; 133 is Musical instrument in the bundled official map.
         float music=Math.max(scores.get(132),scores.get(133));
         return new float[]{music,scores.get(0)};

@@ -20,15 +20,15 @@ import org.json.*;
 /** Foreground-only local sensors; a stopped generation cannot publish or reopen. */
 final class SensorHub {
     interface Output {void accept(JSONObject data);}
-    private final MonitorRecorder monitor;private final SeatMonitor seat;private final Activity activity;private final Output output;private final TextureView texture;
+    private final MonitorRecorder monitor;private final SeatMonitor seat;private final LandmarkHub landmarks;private final MotionDetector changes=new MotionDetector();private volatile boolean showFace,showHand,showHolistic,showYamnet;private long lastMotionFrame;private final Activity activity;private final Output output;private final TextureView texture;
     private final Handler ui=new Handler(Looper.getMainLooper());
     private final HandlerThread cameraThread=new HandlerThread("BloubCamera"),streamThread=new HandlerThread("BloubStream");private final Handler cameraHandler,streamHandler;
     private volatile boolean stopped;private final boolean micWanted,cameraWanted,tofWanted;
     private volatile int quietStart=1380,quietEnd=480;
     private volatile long lastAudioAt,lastDistanceAt,lastSoundAt,liveUntil;private volatile boolean liveRequested,pendingShot;private volatile StreamFrame liveFrame;private volatile String lastCaptureId="";private volatile boolean liveEncoding;private volatile long streamFrames;private volatile double streamFps,streamEncodeMs;private long firstEncodedAt,lastLiveSource;private volatile int liveVersion;private boolean cameraScheduled;private Size activePreview;
     private volatile AudioRecord recorder;private volatile java.lang.Process tofHelper;
-    private volatile float level,music,speech,motion,faceX,faceY;private volatile int distance=-1,faces;
-    private volatile String micStatus="关闭",cameraStatus="关闭",tofStatus="关闭";
+    private volatile float audioConfidence,level,music,speech,motion,faceX,faceY;private volatile int distance=-1,faces;
+    private volatile String audioLabel="",micStatus="关闭",cameraStatus="关闭",tofStatus="关闭";
     private volatile boolean softwareExposure;private long exposureGain;private Range<Long> exposureRange;private Range<Integer> isoRange;
     private CaptureRequest.Builder repeatingBuilder;private Range<Integer> compensationRange;private double compensationStep=.5;private int requestedCompensation;private long lastMeter,cameraOpenedAt;
     private volatile long exposureTimeNs;private volatile int sensitivity,aeState=-1,exposureCompensation;
@@ -36,7 +36,7 @@ final class SensorHub {
     private volatile CameraDevice camera;private volatile CameraCaptureSession session;
     static final class StreamFrame {final byte[] jpeg;final long capturedAt,sequence;final double encodeMs;StreamFrame(byte[] bytes,long at,long sequence,double ms){jpeg=bytes;capturedAt=at;this.sequence=sequence;encodeMs=ms;}}
     private int savedGeneration=-1;private final Gallery gallery;private final String cameraId;private volatile ImageReader photoReader;
-    private long lastPhotoAt;private final DeviceSettings settings;private long lastBitmap,cameraFrames;private volatile int cameraGeneration;private int[] previousPixels;private long lastCamera;
+    private long lastPhotoAt,lastPhotoAttempt;private final DeviceSettings settings;private long lastBitmap,cameraFrames;private volatile int cameraGeneration;private int[] previousPixels;private long lastCamera;
     private final Runnable publish=new Runnable(){public void run(){
         if(stopped)return;
         long now=SystemClock.elapsedRealtime();
@@ -51,11 +51,11 @@ final class SensorHub {
         ui.postDelayed(this,150);
     }};
     SensorHub(Activity activity,TextureView texture,boolean mic,boolean cam,boolean tof,SeatMonitor seat,MonitorRecorder monitor,Output output){
-        this.monitor=monitor;this.seat=seat;settings=new DeviceSettings(activity);lastPhotoAt=activity.getSharedPreferences("gallery",0).getLong("last_photo_uptime",0);if(lastPhotoAt>SystemClock.elapsedRealtime())lastPhotoAt=0;this.activity=activity;this.texture=texture;this.output=output;gallery=new Gallery(activity);cameraId=activity.getSharedPreferences("sensors",0).getString("camera_id","2");
+        this.monitor=monitor;this.seat=seat;landmarks=new LandmarkHub(activity);settings=new DeviceSettings(activity);lastPhotoAt=activity.getSharedPreferences("gallery",0).getLong("last_photo_uptime",0);if(lastPhotoAt>SystemClock.elapsedRealtime())lastPhotoAt=0;this.activity=activity;this.texture=texture;this.output=output;gallery=new Gallery(activity);cameraId=activity.getSharedPreferences("sensors",0).getString("camera_id","2");
         quietStart=activity.getSharedPreferences("sensors",0).getInt("quiet_start",1380);quietEnd=activity.getSharedPreferences("sensors",0).getInt("quiet_end",480);
         micWanted=mic;cameraWanted=cam;tofWanted=tof;
         cameraThread.start();cameraHandler=new Handler(cameraThread.getLooper());streamThread.start();streamHandler=new Handler(streamThread.getLooper());
-        if(mic){if(activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)new Thread(this::audioLoop,"BloubAudio").start();else micStatus="需要麦克风权限";}
+        if(mic||monitor.needsMicrophone()){if(activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)new Thread(this::audioLoop,"BloubAudio").start();else micStatus="需要麦克风权限";}
         if(tof)new Thread(this::tofLoop,"BloubToF").start();
         if(cam){
             if(activity.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)cameraStatus="需要相机权限";
@@ -74,9 +74,10 @@ final class SensorHub {
     }
     private void audioLoop(){
         micStatus="正在加载本地模型";
-        AudioModel model=null;AudioRecord audio=null;
+        AudioModel model=null;AudioRecord audio=null;java.util.concurrent.ExecutorService analysis=java.util.concurrent.Executors.newSingleThreadExecutor();java.util.concurrent.atomic.AtomicBoolean analyzing=new java.util.concurrent.atomic.AtomicBoolean();
         try{
             try{model=new AudioModel(activity);}catch(Throwable e){Log.w("BloubSensors","YAMNET unavailable",e);micStatus="模型失败 · 仅声音能量";}
+            final AudioModel classifier=model;
             if(stopped)return;
             int buffer=Math.max(4096,AudioRecord.getMinBufferSize(16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT));
             audio=new AudioRecord(MediaRecorder.AudioSource.MIC,16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,buffer);
@@ -84,7 +85,7 @@ final class SensorHub {
             short[] chunk=new short[1024],ring=new short[15600];int cursor=0,total=0,soundChunks=0;long classified=0,started=SystemClock.elapsedRealtime();float noiseFloor=.02f;
             audio.startRecording();if(model!=null)micStatus="YAMNet 本地音乐识别";else micStatus="仅声音能量";
             while(!stopped){
-                int n=audio.read(chunk,0,chunk.length);if(n<=0)throw new IOException("Audio read "+n);
+                int n=audio.read(chunk,0,chunk.length);if(n>0)monitor.pcm(chunk,n,System.nanoTime());if(n<=0)throw new IOException("Audio read "+n);
                 double square=0;for(int i=0;i<n;i++){float v=chunk[i]/32768f;square+=v*v;ring[cursor]=chunk[i];cursor=(cursor+1)%ring.length;}total=Math.min(ring.length,total+n);
                 level=(float)Math.min(1,Math.sqrt(square/n)*12);lastAudioAt=SystemClock.elapsedRealtime();
                 long now=SystemClock.elapsedRealtime();
@@ -94,14 +95,12 @@ final class SensorHub {
                     if(level>threshold){if(++soundChunks>=3){boolean wake=lastSoundAt==0||now-lastSoundAt>30000;lastSoundAt=now;if(wake&&cameraWanted)cameraHandler.post(this::openCamera);}}
                     else {soundChunks=0;noiseFloor=noiseFloor*.995f+level*.005f;}
                 }
-                if(model!=null&&total>=ring.length&&now-classified>=1100){
-                    classified=now;float[] scores=model.classify(ring,cursor);
-                    music=scores[0];speech=scores[1];
-                    Log.d("BloubSensors","AUDIO music="+music+" level="+level);
+                if(classifier!=null&&total>=ring.length&&now-classified>=1100&&analyzing.compareAndSet(false,true)){
+                    classified=now;short[] snapshot=new short[ring.length];for(int i=0;i<snapshot.length;i++)snapshot[i]=ring[(cursor+i)%ring.length];analysis.execute(()->{try{float[] scores=classifier.classify(snapshot,0);if(!stopped){if(micWanted){music=scores[0];speech=scores[1];}audioLabel=classifier.label;audioConfidence=classifier.confidence;}}catch(Throwable failure){Log.w("BloubSensors","Audio classification",failure);}finally{analyzing.set(false);}});
                 }
             }
         }catch(Throwable e){if(!stopped){micStatus="麦克风不可用";Log.w("BloubSensors","Audio stopped",e);}}
-        finally{level=music=speech=0;recorder=null;if(audio!=null){try{audio.stop();}catch(Exception ignored){}audio.release();}if(model!=null)model.close();}
+        finally{level=music=speech=0;recorder=null;if(audio!=null){try{audio.stop();}catch(Exception ignored){}audio.release();}if(model!=null){AudioModel completed=model;analysis.execute(completed::close);}analysis.shutdown();}
     }
     private static final Pattern RANGE=Pattern.compile("status:(\\d+)\\s+distance:(\\d+)");
     private void parseDistance(String text){
@@ -162,8 +161,9 @@ final class SensorHub {
         if(rates!=null)for(Range<Integer> rate:rates)if(rate.getLower()==30&&rate.getUpper()==30){r.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,rate);break;}
 
     }
+    private boolean automaticSaveAllowed(){Calendar time=Calendar.getInstance();return settings.shouldSave(seat.currentState(),time.get(Calendar.HOUR_OF_DAY)*60+time.get(Calendar.MINUTE));}
     private void capturePhoto(int generation,CameraDevice device,CameraCharacteristics c,ImageReader reader){
-        if(stopped||generation!=cameraGeneration||camera!=device||session==null||!gallery.enabled()||(!pendingShot&&lastPhotoAt>0&&SystemClock.elapsedRealtime()-lastPhotoAt<settings.photoInterval(seat.currentState())))return;
+        if(stopped||generation!=cameraGeneration||camera!=device||session==null||!gallery.enabled()||(!pendingShot&&!automaticSaveAllowed())||(!pendingShot&&lastPhotoAt>0&&SystemClock.elapsedRealtime()-lastPhotoAt<settings.photoInterval(seat.currentState())))return;
         try{
             CaptureRequest.Builder shot=device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);shot.addTarget(reader.getSurface());configureExposure(shot,c);
             shot.set(CaptureRequest.JPEG_QUALITY,(byte)95);shot.set(CaptureRequest.JPEG_ORIENTATION,0);
@@ -171,10 +171,10 @@ final class SensorHub {
         }catch(Exception e){Log.w("BloubSensors","Photo capture failed",e);}
     }
     private void savePreview(int generation,Size preview,boolean forced){
-        if(photoSaving||stopped||generation!=cameraGeneration||(!forced&&!monitor.recording()&&savedGeneration==generation)||!cameraOn||!gallery.enabled()||(!forced&&lastPhotoAt>0&&SystemClock.elapsedRealtime()-lastPhotoAt<settings.photoInterval(seat.currentState())))return;
-        photoSaving=true;long capturedAt=System.currentTimeMillis(),capturedMono=SystemClock.elapsedRealtime();JSONObject annotation=seat.annotation(capturedAt,capturedMono);Bitmap frame;try{frame=texture.getBitmap(preview.getWidth(),preview.getHeight());}catch(RuntimeException e){photoSaving=false;return;}if(frame==null){photoSaving=false;return;}
+        if(photoSaving||(!forced&&SystemClock.elapsedRealtime()-lastPhotoAttempt<10000)||stopped||generation!=cameraGeneration||!cameraOn||!gallery.enabled()||(!forced&&!automaticSaveAllowed())||(!forced&&lastPhotoAt>0&&SystemClock.elapsedRealtime()-lastPhotoAt<settings.photoInterval(seat.currentState())))return;
+        photoSaving=true;lastPhotoAttempt=SystemClock.elapsedRealtime();long capturedAt=System.currentTimeMillis(),capturedMono=SystemClock.elapsedRealtime();JSONObject annotation=seat.annotation(capturedAt,capturedMono);Bitmap frame;try{frame=texture.getBitmap(preview.getWidth(),preview.getHeight());}catch(RuntimeException e){photoSaving=false;return;}if(frame==null){photoSaving=false;return;}
         cameraHandler.post(()->{try{
-            if(stopped||generation!=cameraGeneration||(!forced&&!monitor.recording()&&savedGeneration==generation)||!gallery.enabled()||(!forced&&!monitor.recording()&&!live()&&!automaticAllowed()))return;
+            if(stopped||generation!=cameraGeneration||!gallery.enabled()||(!forced&&!automaticSaveAllowed())||(!forced&&lastPhotoAt>0&&SystemClock.elapsedRealtime()-lastPhotoAt<settings.photoInterval(seat.currentState())))return;
             java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
             if(!frame.compress(Bitmap.CompressFormat.JPEG,95,bytes))throw new IOException("Preview JPEG failed");
             lastCaptureId=gallery.saveJpeg(bytes.toByteArray(),faces,motion,cameraId,"2".equals(cameraId)?90:0,annotation);savedGeneration=generation;pendingShot=false;lastPhotoAt=SystemClock.elapsedRealtime();activity.getSharedPreferences("gallery",0).edit().putLong("last_photo_uptime",lastPhotoAt).apply();
@@ -182,15 +182,18 @@ final class SensorHub {
         }catch(Exception e){Log.w("BloubSensors","Preview photo save failed",e);}finally{frame.recycle();photoSaving=false;}});
     }
     void quietHours(int start,int end){quietStart=start;quietEnd=end;cameraHandler.post(()->{if(!cameraOn)cameraStatus=automaticAllowed()?"等待短时观察":"夜间休息 · 声音唤醒";});}
-    private boolean automaticAllowed(){Calendar c=Calendar.getInstance();return CameraSchedule.allows(c.get(Calendar.HOUR_OF_DAY)*60+c.get(Calendar.MINUTE),quietStart,quietEnd,SystemClock.elapsedRealtime(),lastSoundAt,micWanted);}
+    private boolean automaticAllowed(){if(settings.get().optBoolean("nightSaving"))return true;Calendar c=Calendar.getInstance();return CameraSchedule.allows(c.get(Calendar.HOUR_OF_DAY)*60+c.get(Calendar.MINUTE),quietStart,quietEnd,SystemClock.elapsedRealtime(),lastSoundAt,micWanted);}
     private boolean live(){return !stopped&&liveRequested&&SystemClock.elapsedRealtime()<liveUntil;}
-    String remoteStatus(){try{return new JSONObject().put("live",live()).put("cameraOn",cameraOn).put("cameraId",cameraId).put("status",cameraStatus).put("detectionEnabled",seat.detecting()).put("faceAnalysis",false).put("lastCaptureId",lastCaptureId).put("quietStart",quietStart).put("quietEnd",quietEnd).put("automaticAllowed",automaticAllowed()).put("uptimeMs",SystemClock.elapsedRealtime()).put("streamFrames",streamFrames).put("streamFps",streamFps).put("streamEncodeMs",streamEncodeMs).put("exposureMode",softwareExposure?"software_auto":"hardware_auto").put("exposureTimeNs",exposureTimeNs).put("iso",sensitivity).put("aeState",aeState).put("exposureCompensation",exposureCompensation).toString();}catch(JSONException e){return "{}";}}
+    String landmarkInfo(){return landmarks.info();}
+    String remoteStatus(){try{return new JSONObject().put("live",live()).put("cameraOn",cameraOn).put("cameraId",cameraId).put("status",cameraStatus).put("detectionEnabled",seat.detecting()).put("landmarks",new JSONObject(landmarks.info())).put("yamnetEnabled",showYamnet).put("audioLabel",audioLabel).put("audioConfidence",audioConfidence).put("faceIdentity",false).put("lastCaptureId",lastCaptureId).put("quietStart",quietStart).put("quietEnd",quietEnd).put("automaticAllowed",automaticAllowed()).put("uptimeMs",SystemClock.elapsedRealtime()).put("streamFrames",streamFrames).put("streamFps",streamFps).put("streamEncodeMs",streamEncodeMs).put("exposureMode",softwareExposure?"software_auto":"hardware_auto").put("exposureTimeNs",exposureTimeNs).put("iso",sensitivity).put("aeState",aeState).put("exposureCompensation",exposureCompensation).toString();}catch(JSONException e){return "{}";}}
     boolean remote(String action){
         if(stopped||!cameraWanted||activity.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)return false;
-        if("capture".equals(action)&&!gallery.enabled())return false;
+        if("capture".equals(action)&&!gallery.enabled())return false;if("yamnet-on".equals(action)&&!micWanted&&!monitor.needsMicrophone())return false;
         cameraHandler.post(()->{if(stopped)return;
+            if(action.startsWith("landmark-")){boolean on=action.endsWith("-on");if(action.startsWith("landmark-face-"))showFace=on;else if(action.startsWith("landmark-hand-"))showHand=on;else if(action.startsWith("landmark-holistic-"))showHolistic=on;updateLandmarkLayers();return;}
+            if(action.startsWith("yamnet-")){showYamnet=action.endsWith("-on");return;}
             if("detect-on".equals(action)||"detect-off".equals(action)){seat.detection("detect-on".equals(action)&&live());return;}
-            if("stop".equals(action)){seat.detection(false);liveVersion++;liveRequested=false;liveFrame=null;if(!ownsRecorder)closeCamera();return;}
+            if("stop".equals(action)){seat.detection(false);showFace=showHand=showHolistic=showYamnet=false;updateLandmarkLayers();liveVersion++;liveRequested=false;liveFrame=null;if(!ownsRecorder)closeCamera();return;}
             if("start".equals(action)){boolean already=live();liveRequested=true;liveUntil=SystemClock.elapsedRealtime()+90000;if(!already){liveVersion++;liveFrame=null;streamFrames=0;streamFps=0;firstEncodedAt=0;lastLiveSource=0;ui.post(liveTick);}}
             if("capture".equals(action)){pendingShot=true;if(cameraOn&&activePreview!=null){Size size=activePreview;int generation=cameraGeneration;ui.post(()->savePreview(generation,size,true));return;}}
             lastCamera=0;openCamera();
@@ -214,14 +217,14 @@ final class SensorHub {
         streamHandler.post(()->{Bitmap upright=frame;try{
             if(!live()||version!=liveVersion)return;
             if("2".equals(cameraId)){Matrix m=new Matrix();m.postRotate(90);upright=Bitmap.createBitmap(frame,0,0,frame.getWidth(),frame.getHeight(),m,true);}
-            if(seat.detecting())seat.draw(upright,capturedAt);java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();upright.compress(Bitmap.CompressFormat.JPEG,80,out);long done=SystemClock.elapsedRealtime();if(!live()||version!=liveVersion)return;streamEncodeMs=done-capturedAt;if(firstEncodedAt==0)firstEncodedAt=done;long sequence=++streamFrames;streamFps=sequence<2?0:1000.0*(sequence-1)/Math.max(1,done-firstEncodedAt);liveFrame=new StreamFrame(out.toByteArray(),capturedAt,sequence,streamEncodeMs);
+            if(seat.detecting())seat.draw(upright,capturedAt);landmarks.draw(upright,capturedAt,showFace,showHand,showHolistic);if(showYamnet)drawAudioLabel(upright,capturedAt);java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();upright.compress(Bitmap.CompressFormat.JPEG,80,out);long done=SystemClock.elapsedRealtime();if(!live()||version!=liveVersion)return;streamEncodeMs=done-capturedAt;if(firstEncodedAt==0)firstEncodedAt=done;long sequence=++streamFrames;streamFps=sequence<2?0:1000.0*(sequence-1)/Math.max(1,done-firstEncodedAt);liveFrame=new StreamFrame(out.toByteArray(),capturedAt,sequence,streamEncodeMs);
         }finally{if(upright!=frame)upright.recycle();frame.recycle();liveEncoding=false;if(live())ui.post(this::updateLiveFrame);}});
     }
     void monitorChanged(){cameraHandler.post(()->{closeCamera();lastCamera=0;openCamera();});}
     void seatWake(){cameraHandler.post(this::openCamera);}
     private void openCamera(){
         if(stopped||!cameraWanted||activity.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED||cameraOn||opening||camera!=null)return;
-        long now=SystemClock.elapsedRealtime();if(!live()&&!pendingShot&&!seat.previewing()&&!monitor.enabled()){if(!automaticAllowed()){cameraStatus="夜间休息 · 声音唤醒";return;}if(lastCamera>0&&now-lastCamera<(seat.enabled()?20000:120000))return;}
+        long now=SystemClock.elapsedRealtime();if(!live()&&!pendingShot&&!seat.previewing()&&!monitor.enabled()){if(!settings.scheduledObservation())return;if(!automaticAllowed()){cameraStatus="夜间休息 · 声音唤醒";return;}if(lastCamera>0&&now-lastCamera<settings.observationInterval())return;}
         opening=true;final int generation=++cameraGeneration;cameraStatus="正在短时观察";lastCamera=SystemClock.elapsedRealtime();
         try{
             CameraManager manager=(CameraManager)activity.getSystemService(Context.CAMERA_SERVICE);
@@ -234,18 +237,18 @@ final class SensorHub {
             if(map==null)throw new IOException("Missing stream map");
             final Size preview=chooseSize(map.getOutputSizes(SurfaceTexture.class),"2".equals(cameraId)?.75:4.0/3,1300000);
             // N5D camera 3 advertises JPEG but its HAL stalls with a JPEG target; use its full preview.
-            Size[] jpegSizes="3".equals(cameraId)?null:map.getOutputSizes(ImageFormat.JPEG);final Size picture=jpegSizes==null||jpegSizes.length==0?null:chooseSize(jpegSizes,preview.getWidth()/(double)preview.getHeight(),2100000);
+            Size[] jpegSizes=("3".equals(cameraId)||monitor.enabled()||!gallery.enabled())?null:map.getOutputSizes(ImageFormat.JPEG);final Size picture=jpegSizes==null||jpegSizes.length==0?null:chooseSize(jpegSizes,preview.getWidth()/(double)preview.getHeight(),2100000);
             SurfaceTexture t=texture.getSurfaceTexture();if(t==null){opening=false;return;}t.setDefaultBufferSize(preview.getWidth(),preview.getHeight());
             final ImageReader photos=picture==null?null:ImageReader.newInstance(picture.getWidth(),picture.getHeight(),ImageFormat.JPEG,2);photoReader=photos;
             if(photos!=null)photos.setOnImageAvailableListener(reader->{Image image=null;try{
-                image=reader.acquireLatestImage();if(image==null||stopped||generation!=cameraGeneration||savedGeneration==generation||!gallery.enabled())return;
+                image=reader.acquireLatestImage();if(image==null||stopped||generation!=cameraGeneration||savedGeneration==generation||!gallery.enabled()||(!pendingShot&&!automaticSaveAllowed()))return;
                 java.nio.ByteBuffer buffer=image.getPlanes()[0].getBuffer();byte[] jpeg=new byte[buffer.remaining()];buffer.get(jpeg);
-                gallery.saveJpeg(jpeg,faces,motion,cameraId,"2".equals(cameraId)?90:0,seat.annotation(System.currentTimeMillis(),SystemClock.elapsedRealtime()));savedGeneration=generation;lastPhotoAt=SystemClock.elapsedRealtime();activity.getSharedPreferences("gallery",0).edit().putLong("last_photo_uptime",lastPhotoAt).apply();
+                gallery.saveJpeg(jpeg,faces,motion,cameraId,"2".equals(cameraId)?90:0,seat.annotation(System.currentTimeMillis(),SystemClock.elapsedRealtime()));savedGeneration=generation;pendingShot=false;lastPhotoAt=SystemClock.elapsedRealtime();activity.getSharedPreferences("gallery",0).edit().putLong("last_photo_uptime",lastPhotoAt).apply();
                 Log.i("BloubSensors","PHOTO_SAVED id="+cameraId+" size="+picture);
             }catch(Exception e){Log.w("BloubSensors","Photo save failed",e);}finally{if(image!=null)image.close();}},cameraHandler);
             Log.i("BloubSensors","CAMERA_CONFIG id="+cameraId+" preview="+preview+" jpeg="+picture);
             activePreview=preview;final Surface target=new Surface(t);previewSurface=target;Surface video=null;
-            if(monitor.enabled()){Size[] videoSizes=map.getOutputSizes(android.media.MediaRecorder.class);if(videoSizes!=null&&videoSizes.length>0)try{Size videoSize=chooseSize(videoSizes,preview.getWidth()/(double)preview.getHeight(),1300000);video=monitor.prepare(videoSize,"2".equals(cameraId)?90:0);ownsRecorder=video!=null;}catch(Exception e){if(ownsRecorder){monitor.failed();ownsRecorder=false;}Log.w("BloubMonitor","Video preparation failed",e);}}
+            if(monitor.enabled()){Size[] videoSizes=map.getOutputSizes(android.media.MediaRecorder.class);if(videoSizes!=null&&videoSizes.length>0)try{Size videoSize=chooseSize(videoSizes,preview.getWidth()/(double)preview.getHeight(),1300000);video=monitor.prepare(videoSize,"2".equals(cameraId)?90:0,new VideoCompositor.Overlay(){public void geometry(Bitmap image,long mono){JSONObject options=monitor.recordingOptions();if(options.optBoolean("overlayObjects"))seat.draw(image,mono,true,false);landmarks.draw(image,mono,options.optBoolean("overlayFaces"),options.optBoolean("overlayHands"),options.optBoolean("overlayHolistic"),false);}public void hud(Bitmap image,long wall,long mono){JSONObject options=monitor.recordingOptions();int turn=options.optBoolean("rotationEnabled")?options.optInt("rotation"):0;boolean mirror=options.optBoolean("mirror");if(options.optBoolean("overlayObjects"))seat.drawLabels(image,mono,turn,mirror);landmarks.drawLabels(image,mono,options.optBoolean("overlayFaces"),options.optBoolean("overlayHands"),options.optBoolean("overlayHolistic"),turn,mirror);if(options.optBoolean("timestamp"))drawHud(image,new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss",Locale.US).format(new Date(wall)),0);if(options.optBoolean("overlayYamnet"))drawAudioLabel(image,mono);}});ownsRecorder=video!=null;}catch(Exception e){if(ownsRecorder){monitor.failed();ownsRecorder=false;}Log.w("BloubMonitor","Video preparation failed",e);}}
             final Surface videoTarget=video;
             final java.util.List<Surface> targets=new ArrayList<>();targets.add(target);if(photos!=null)targets.add(photos.getSurface());if(videoTarget!=null)targets.add(videoTarget);
             manager.openCamera(cameraId,new CameraDevice.StateCallback(){
@@ -272,13 +275,16 @@ final class SensorHub {
                 public void onDisconnected(CameraDevice d){d.close();if(generation==cameraGeneration){closeCamera();cameraStatus="相机已断开";}}
                 public void onError(CameraDevice d,int error){d.close();if(generation==cameraGeneration){closeCamera();cameraStatus="相机不可用 "+error;}}
             },cameraHandler);
-            cameraHandler.postDelayed(()->closeAfterObservation(generation,target),5500);
+            cameraHandler.postDelayed(()->closeAfterObservation(generation,target),seat.enabled()?24500:5500);
         }catch(Exception e){opening=false;cameraStatus="相机不可用";if(ownsRecorder){monitor.failed();ownsRecorder=false;}Log.w("BloubSensors","Camera",e);}
     }
     private void observeFrame(){
-        if(stopped||!cameraOn)return;cameraFrames++;if(monitor.recording()&&activePreview!=null&&(lastPhotoAt==0||SystemClock.elapsedRealtime()-lastPhotoAt>=settings.photoInterval(seat.currentState())))savePreview(cameraGeneration,activePreview,false);
+        if(stopped||!cameraOn)return;cameraFrames++;long now=SystemClock.elapsedRealtime();updateLandmarkLayers();
+        if(landmarks.readyForFrame(now)){Bitmap frame=null;try{frame=texture.getBitmap("2".equals(cameraId)?480:640,"2".equals(cameraId)?640:480);if(frame!=null){if("2".equals(cameraId)){Matrix transform=new Matrix();transform.postRotate(90);Bitmap upright=Bitmap.createBitmap(frame,0,0,frame.getWidth(),frame.getHeight(),transform,true);frame.recycle();frame=upright;}landmarks.offer(frame,now);}}catch(RuntimeException failure){if(frame!=null)frame.recycle();Log.w("BloubLandmarks","Frame read",failure);}}
+        if(monitor.recording()&&monitor.recordingOptions().optBoolean("motionOnly")&&now-lastMotionFrame>=500){lastMotionFrame=now;Bitmap sample=null;try{sample=texture.getBitmap(32,24);if(sample!=null){int[] pixels=new int[768];sample.getPixels(pixels,0,32,0,0,32,24);for(int i=0;i<pixels.length;i++){int pixel=pixels[i];pixels[i]=(int)(.299*((pixel>>16)&255)+.587*((pixel>>8)&255)+.114*(pixel&255));}if(changes.changed(pixels,now))monitor.motion(System.currentTimeMillis());}}catch(RuntimeException failure){Log.w("BloubMonitor","Motion sample",failure);}finally{if(sample!=null)sample.recycle();}}
+        if(now-cameraOpenedAt>3300&&activePreview!=null&&gallery.enabled()&&automaticSaveAllowed()&&(lastPhotoAt==0||SystemClock.elapsedRealtime()-lastPhotoAt>=settings.photoInterval(seat.currentState())))savePreview(cameraGeneration,activePreview,false);
         long seatNow=SystemClock.elapsedRealtime();if(seat.reserve(seatNow)){Bitmap frame=null;try{frame=texture.getBitmap("2".equals(cameraId)?240:320,"2".equals(cameraId)?320:240);}catch(RuntimeException e){Log.w("BloubSeat","Frame read",e);}if(frame==null)seat.cancelFrame();else seat.observe(frame,cameraId,seatNow);}
-        long now=SystemClock.elapsedRealtime();if(now-cameraOpenedAt>1500&&now-lastMeter>800){lastMeter=now;meterExposure();}if(processing||now-lastBitmap<(live()?1000:450))return;
+        if(now-cameraOpenedAt>1500&&now-lastMeter>800){lastMeter=now;meterExposure();}if(processing||now-lastBitmap<(live()?1000:450))return;
         lastBitmap=now;processing=true;
         Bitmap source=texture.getBitmap("2".equals(cameraId)?240:320,"2".equals(cameraId)?320:240);if(source==null){processing=false;return;}
         cameraHandler.post(()->{
@@ -309,6 +315,9 @@ final class SensorHub {
         request.set(CaptureRequest.SENSOR_EXPOSURE_TIME,time);request.set(CaptureRequest.SENSOR_SENSITIVITY,iso);request.set(CaptureRequest.SENSOR_FRAME_DURATION,33350000L);
     }
     private final CameraCaptureSession.CaptureCallback exposureCallback=new CameraCaptureSession.CaptureCallback(){public void onCaptureCompleted(CameraCaptureSession s,CaptureRequest r,TotalCaptureResult result){Long time=result.get(CaptureResult.SENSOR_EXPOSURE_TIME);Integer iso=result.get(CaptureResult.SENSOR_SENSITIVITY),state=result.get(CaptureResult.CONTROL_AE_STATE),ev=result.get(CaptureResult.CONTROL_AE_EXPOSURE_COMPENSATION);if(time!=null)exposureTimeNs=time;if(iso!=null)sensitivity=iso;if(state!=null)aeState=state;if(ev!=null)exposureCompensation=ev;}};
+    private void updateLandmarkLayers(){JSONObject c=monitor.recordingOptions();boolean recording=monitor.enabled();landmarks.layers(showFace||(recording&&c.optBoolean("overlayFaces")),showHand||(recording&&c.optBoolean("overlayHands")),showHolistic||(recording&&c.optBoolean("overlayHolistic")));seat.recordingDemand(recording&&c.optBoolean("overlayObjects"));}
+    private void drawAudioLabel(Bitmap image,long mono){String label=lastAudioAt>0&&mono-lastAudioAt<3000&&!audioLabel.isEmpty()?"YAMNet: "+audioLabel+" "+Math.round(audioConfidence*100)+"%":"YAMNet: 等待声音";drawHud(image,label,1);}
+    private static void drawHud(Bitmap image,String text,int row){Canvas canvas=new Canvas(image);Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);float scale=image.getWidth()/640f,height=28*scale;paint.setTextSize(16*scale);paint.setTypeface(Typeface.MONOSPACE);float x=12*scale,y=12*scale+row*(height+6*scale),width=Math.min(image.getWidth()-x*2,paint.measureText(text)+16*scale);paint.setColor(Color.argb(175,12,18,25));canvas.drawRoundRect(new RectF(x,y,x+width,y+height),4*scale,4*scale,paint);paint.setColor(Color.WHITE);canvas.drawText(text,x+8*scale,y+20*scale,paint);}
     private void closeCamera(){
         repeatingBuilder=null;
         if(session!=null)try{session.stopRepeating();}catch(Exception ignored){}if(ownsRecorder){monitor.finish();ownsRecorder=false;}
@@ -318,7 +327,7 @@ final class SensorHub {
         if(!stopped)cameraStatus=automaticAllowed()?"相机 "+cameraId+" · 等待观察":"夜间休息 · 声音唤醒";
     }
     void stop(){
-        stopped=true;seat.suspendObservation();seat.detection(false);liveVersion++;liveRequested=false;liveFrame=null;pendingShot=false;ui.removeCallbacks(publish);
+        stopped=true;landmarks.close();seat.recordingDemand(false);seat.suspendObservation();seat.detection(false);liveVersion++;liveRequested=false;liveFrame=null;pendingShot=false;ui.removeCallbacks(publish);
         java.lang.Process p=tofHelper;if(p!=null){try{p.getOutputStream().close();}catch(Exception ignored){}p.destroy();}
         cameraHandler.removeCallbacksAndMessages(null);cameraHandler.post(()->{closeCamera();cameraThread.quitSafely();});streamHandler.post(()->streamThread.quitSafely());
         // Audio reads finish in ~64ms, then release on their own worker.

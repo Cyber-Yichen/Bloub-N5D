@@ -37,12 +37,12 @@
 
 | 方法 | 路径 | 含义 |
 | --- | --- | --- |
-| GET | `/api/presence?days=7` | 当前工位状态与最近 1–90 天统计；默认七天 |
+| GET | `/api/presence?days=7` | 当前工位状态与最近 1–365 天统计；默认七天 |
 | GET | `/api/detections` | 当前新鲜检测框、类别、分数和采样启动时间 |
 | POST | `/api/camera/detection/on` | 在已开启实时相机时启用检测框 |
 | POST | `/api/camera/detection/off` | 关闭流式检测框 |
 
-`/api/presence` 的 days 必须为 1–90 的整数，否则 HTTP 400。网页通过 `/api/seat/region`、`/api/seat/label` 选择区域与纠正结果，详见图库 API；不提供清空统计接口。
+`/api/presence` 的 days 必须为 1–365 的整数，否则 HTTP 400。网页通过 `/api/seat/region`、`/api/seat/label` 选择区域与纠正结果，详见图库 API；不提供清空统计接口。
 
 ```bash
 N5D_URL='http://<设备 IP>:8768'
@@ -77,3 +77,11 @@ occupiedMs / emptyMs 只累计连续确认区间；uncertainMs 是已采样但�
 - 状态需要三次稳定观察才确认，不把一次没框到人马上算作离开。相机无画面、图像过暗/过曝、后台、休息期未观察或确认过渡保留 unknown；页面用明确原因显示，不伪装成无人。
 - 新字段 stateReason 为 observed、confirming、initializing、stale、invalid_frame、disabled、background；requiresCalibration 恒为 false，ready 仍只表示完成可选背景校准。
 - 旧图片和历史 unknown 区间不自动改写为无人，避免给训练数据制造不存在的真值。
+
+## 0.9.2 自选时间查询
+
+`GET /api/presence?start=<Unix毫秒>&end=<Unix毫秒>` 以设备时区拆分自然日，start 包含、end 不包含，最长 365 天。两参数必须同时存在且 end>start。每日时间片与累计时长裁剪到查询范围，start/end 仍表示日期边界；返回 rangeStart、rangeEndExclusive 和 todayDate。记录默认保留 90 天，可通过 presenceRetentionDays 修改；查询不会产生或恢复已删除记录。
+
+网页可选开始/结束日期，结束日期包含整日；设备页仍显示最近七天。默认每分钟观察时，工位开启后的观察窗口约 24.5 秒，每 10 秒至多计一次独立统计样本，三次一致才确认。新鲜期随 observationMinutes 调整到间隔加 20 秒，避免正常观察间隔中反复退为未知；无有效画面仍保持 unknown。
+
+关键点与声音叠加仅用于显示，不改变现有工位判断或历史照片标签。

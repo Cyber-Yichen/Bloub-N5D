@@ -36,13 +36,13 @@ public final class MainActivity extends Activity {
             public boolean command(String action){SensorHub hub=sensors;return foreground&&cameraEnabled&&hub!=null&&hub.remote(action);}
             public SensorHub.StreamFrame frame(){SensorHub hub=sensors;return hub==null?null:hub.streamFrame();}
             public void heartbeat(){SensorHub hub=sensors;if(hub!=null)hub.streamHeartbeat();}
-            public String presence(int days){return seat.snapshot(days);}
-            public String detections(){return seat.detections();}
+            public String presence(int days){return seat.snapshot(days);}public String presence(long from,long to){return seat.range(from,to);}
+            public String detections(){return seat.detections();}public String landmarks(){SensorHub hub=sensors;return hub==null?"{}":hub.landmarkInfo();}
             public String settings(){return settings.get().toString();}
             public String updateSettings(JSONObject delta)throws Exception{return applySettings(delta);}
             public String monitor(){return monitor.info();}
-            public void monitorConfig(JSONObject delta)throws Exception{monitor.config.save(delta);monitor.retry();}
-            public void monitorRetry(){monitor.retry();}
+            public void monitorConfig(JSONObject delta)throws Exception{JSONObject previous=monitor.config.get();monitor.config.save(delta);monitor.configurationChanged(previous);ui.post(()->{if(monitor.needsMicrophone()&&checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},41);if(monitor.enabled())restartSensors();});}
+            public void monitorRetry(){monitor.retry();}public String monitorTest(JSONObject draft)throws Exception{return monitor.testConnection(draft);}
             public InputStream video(String id)throws IOException{return monitor.open(id);}
             public boolean videoDelete(String id){return monitor.delete(id);}
             public String seatControl(String action,JSONObject data)throws Exception{if(action.equals("region")){JSONArray r=data.getJSONArray("roi");if(r.length()!=4||!Double.isFinite(r.getDouble(0))||!Double.isFinite(r.getDouble(1))||!Double.isFinite(r.getDouble(2))||!Double.isFinite(r.getDouble(3))||r.getDouble(0)<0||r.getDouble(1)<0||r.getDouble(2)>1||r.getDouble(3)>1||r.getDouble(2)-r.getDouble(0)<.15||r.getDouble(3)-r.getDouble(1)<.15)throw new JSONException("区域无效");seat.region((float)r.getDouble(0),(float)r.getDouble(1),(float)r.getDouble(2),(float)r.getDouble(3));return "{\"accepted\":true}";}if(action.equals("label")){String value=data.getString("state");if(!value.matches("empty|occupied"))throw new JSONException("状态无效");return seat.label(value);}if(action.equals("preview")){seat.preview(data.getBoolean("enabled"));if(data.getBoolean("enabled"))ui.post(()->{if(sensors!=null)sensors.seatWake();});return "{\"accepted\":true}";}throw new JSONException("操作无效");}
@@ -103,12 +103,12 @@ public final class MainActivity extends Activity {
     }
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);if(request==41)restartSensors();}
     private String applySettings(JSONObject delta)throws Exception{
-        JSONObject saved=settings.save(delta);ui.post(()->{try{JSONObject d=settings.get();
-          boolean newMic=d.getBoolean("mic"),newCamera=d.getBoolean("camera"),newTof=d.getBoolean("tof");String cameraId=d.getString("cameraId");boolean sensorChange=newMic!=micEnabled||newCamera!=cameraEnabled||newTof!=tofEnabled||!getSharedPreferences("sensors",0).getString("camera_id","2").equals(cameraId);
+        boolean wasMonitor=settings.get().optBoolean("monitorEnabled");JSONObject saved=settings.save(delta);final boolean monitorModeChanged=wasMonitor!=saved.optBoolean("monitorEnabled");if(delta.has("observationMinutes"))seat.scheduleChanged();if(delta.has("photoRetentionDays"))gallery.prune();if(delta.has("presenceRetentionDays"))seat.retentionChanged();ui.post(()->{try{JSONObject d=settings.get();
+          boolean newMic=d.getBoolean("mic"),newCamera=d.getBoolean("camera"),newTof=d.getBoolean("tof");String cameraId=d.getString("cameraId");boolean sensorChange=monitorModeChanged||newMic!=micEnabled||newCamera!=cameraEnabled||newTof!=tofEnabled||!getSharedPreferences("sensors",0).getString("camera_id","2").equals(cameraId);
           getSharedPreferences("sensors",0).edit().putString("camera_id",cameraId).putInt("quiet_start",SettingsSpec.minutes(d.getString("quietStart"))).putInt("quiet_end",SettingsSpec.minutes(d.getString("quietEnd"))).apply();seat.cameraChanged(cameraId);
           micEnabled=newMic;cameraEnabled=newCamera;tofEnabled=newTof;enabled=d.getBoolean("lights");gallery.enabled(d.getBoolean("gallerySaving"));if(seat.enabled()!=d.getBoolean("seatEnabled"))seat.enabled(d.getBoolean("seatEnabled"));
           if(!enabled&&lights!=null)lights.release("OFF");WindowManager.LayoutParams a=getWindow().getAttributes();a.screenBrightness=d.getInt("brightness")/100f;getWindow().setAttributes(a);
-          ArrayList<String> missing=new ArrayList<>();if(newMic&&checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)missing.add(Manifest.permission.RECORD_AUDIO);if(newCamera&&checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)missing.add(Manifest.permission.CAMERA);
+          ArrayList<String> missing=new ArrayList<>();if((newMic||monitor.needsMicrophone())&&checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)missing.add(Manifest.permission.RECORD_AUDIO);if(newCamera&&checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)missing.add(Manifest.permission.CAMERA);
           if(sensorChange)restartSensors();else if(sensors!=null){sensors.quietHours(SettingsSpec.minutes(d.getString("quietStart")),SettingsSpec.minutes(d.getString("quietEnd")));if(delta.has("monitorEnabled"))sensors.monitorChanged();}
           if(!missing.isEmpty())requestPermissions(missing.toArray(new String[0]),41);
           if(web!=null&&ready)web.evaluateJavascript("window.n5dApplySettings&&window.n5dApplySettings("+d.toString()+")",null);
@@ -127,6 +127,7 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void seatRegion(float left,float top,float right,float bottom){seat.region(left,top,right,bottom);}
         @JavascriptInterface public String seatLabel(String kind){return seat.label(kind);}
 
+        @JavascriptInterface public String galleryAccessCode(String value){try{return galleryServer.changeCode(value.isEmpty()?null:value,null);}catch(Exception e){try{return new JSONObject().put("error",e.getMessage()).toString();}catch(Exception ignored){return "{}";}}}
         @JavascriptInterface public String galleryServerInfo(){return galleryServer.info();}
         @JavascriptInterface public void galleryServerEnabled(boolean value){ui.post(()->{galleryServer.enabled(value);settings.remember("galleryServerEnabled",value);if(value&&foreground)galleryServer.start();else ui.postDelayed(()->{if(!galleryServer.enabled())galleryServer.stop();},350);});}
         @JavascriptInterface public void copyGalleryAddress(){ui.post(()->{try{String address=new JSONObject(galleryServer.info()).optString("url");if(!address.isEmpty()){android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Bloub 局域网图库",address));Toast.makeText(MainActivity.this,"下载网址已复制",Toast.LENGTH_SHORT).show();}}catch(Exception ignored){}});}
@@ -134,7 +135,7 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public String cameraInfo(){return SensorHub.cameraInfo(MainActivity.this);}
         @JavascriptInterface public void cameraSource(String id){if(!"2".equals(id)&&!"3".equals(id))return;ui.post(()->{String old=getSharedPreferences("sensors",0).getString("camera_id","2");getSharedPreferences("sensors",0).edit().putString("camera_id",id).apply();seat.cameraChanged(id);if(!id.equals(old)&&cameraEnabled)restartSensors();});}
         @JavascriptInterface public String galleryList(long before){return gallery.list(before);}
-        @JavascriptInterface public void galleryEnabled(boolean value){gallery.enabled(value);settings.remember("gallerySaving",value);}
+        @JavascriptInterface public void galleryEnabled(boolean value){try{applySettings(new JSONObject().put("gallerySaving",value));}catch(Exception ignored){}}
         @JavascriptInterface public boolean galleryDelete(String id){return gallery.delete(id);}
         @JavascriptInterface public void galleryClear(){gallery.clear();}
 

@@ -6,26 +6,34 @@ import android.util.*;
 import org.json.*;
 import java.util.*;
 import java.text.SimpleDateFormat;
-/** One device-local seat. Features, adaptive prototypes and 90-day estimated intervals stay private. */
+/** One device-local seat. Features, adaptive prototypes and retained estimated intervals stay private. */
 final class SeatMonitor {
   private final Context context;private final HandlerThread thread=new HandlerThread("BloubSeat");private final Handler worker;
   private final SeatLearner learner=new SeatLearner();private final PresenceTimeline timeline=new PresenceTimeline();
-  private volatile boolean enabled,active,busy;private volatile long detectionUntil;private long lastStatistic,lastRetentionSweep;private volatile long previewUntil,lastInference;private volatile String preview="",message="正在观察",modelStatus="模型待加载";
+  private volatile boolean enabled,active,busy,recordingBoxes;private volatile long detectionUntil;private long lastStatistic,lastRetentionSweep;private volatile long previewUntil,lastInference;private volatile String preview="",message="正在观察",modelStatus="模型待加载";
   private volatile DetectionFrame boxes;
   private static final class DetectionFrame {final long at;final java.util.List<PersonDetector.Box> items;DetectionFrame(long at,java.util.List<PersonDetector.Box> items){this.at=at;this.items=items;}}
   private PersonDetector detector;private int version;private String cameraId;
   private float[] roi={.15f,.08f,.85f,.95f},latest;private long latestAt,lastWall;private double personScore,inferenceMs;private boolean usable;
-  SeatMonitor(Context c){context=c.getApplicationContext();enabled=prefs().getBoolean("enabled",false);cameraId=c.getSharedPreferences("sensors",0).getString("camera_id","2");load();thread.start();worker=new Handler(thread.getLooper());}
+  SeatMonitor(Context c){context=c.getApplicationContext();enabled=prefs().getBoolean("enabled",false);cameraId=c.getSharedPreferences("sensors",0).getString("camera_id","2");timeline.interval(new DeviceSettings(context).observationInterval());load();thread.start();worker=new Handler(thread.getLooper());}
   private SharedPreferences prefs(){return context.getSharedPreferences("seat",0);}
+  synchronized void scheduleChanged(){timeline.interval(new DeviceSettings(context).observationInterval());}
+  private long freshness(){return Math.max(60000,new DeviceSettings(context).observationInterval()+20000);}
+  private int retentionDays(){return new DeviceSettings(context).get().optInt("presenceRetentionDays",90);}
+  synchronized void retentionChanged(){persist();lastRetentionSweep=SystemClock.elapsedRealtime();}
   boolean enabled(){return enabled;}
   boolean detecting(){return active&&SystemClock.elapsedRealtime()<detectionUntil;}
   void detection(boolean value){detectionUntil=value?SystemClock.elapsedRealtime()+90000:0;if(!value)boxes=null;}
   void heartbeat(){if(detecting())detectionUntil=SystemClock.elapsedRealtime()+90000;}
   synchronized String currentState(){int s=active&&enabled?timeline.current(SystemClock.elapsedRealtime()):-1;return s==1?"occupied":s==0?"empty":"unknown";}
   String detections(){try{DetectionFrame f=boxes;JSONArray list=new JSONArray();if(detecting()&&f!=null&&SystemClock.elapsedRealtime()-f.at<1500)for(PersonDetector.Box b:f.items)list.put(new JSONObject().put("label",b.label).put("classId",b.classId).put("score",b.score).put("left",b.left).put("top",b.top).put("right",b.right).put("bottom",b.bottom));return new JSONObject().put("enabled",detecting()).put("captureUptime",f==null?0:f.at).put("boxes",list).toString();}catch(JSONException e){return "{}";}}
-  void draw(Bitmap image,long at){DetectionFrame f=boxes;if(!detecting()||f==null||at<f.at||at-f.at>1500)return;Canvas canvas=new Canvas(image);Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);paint.setStrokeWidth(2.5f);paint.setTextSize(18);
-    for(PersonDetector.Box b:f.items){float x=b.left*image.getWidth(),y=b.top*image.getHeight(),right=b.right*image.getWidth(),bottom=b.bottom*image.getHeight();if(right<=x||bottom<=y)continue;paint.setColor(Color.rgb(57,118,203));paint.setStyle(Paint.Style.STROKE);canvas.drawRect(x,y,right,bottom,paint);String text=(b.classId==0?"人":b.label)+" "+Math.round(b.score*100)+"%";float width=Math.min(image.getWidth(),paint.measureText(text)+12),left=Math.min(x,image.getWidth()-width),top=y>27?y-27:Math.min(image.getHeight()-27,y);paint.setStyle(Paint.Style.FILL);canvas.drawRect(left,top,left+width,top+27,paint);paint.setColor(Color.WHITE);canvas.drawText(text,left+6,top+20,paint);}
+  void draw(Bitmap image,long at){draw(image,at,false);}
+  void recordingDemand(boolean value){recordingBoxes=value;}
+  void draw(Bitmap image,long at,boolean forced){draw(image,at,forced,true);}
+  void draw(Bitmap image,long at,boolean forced,boolean labels){DetectionFrame f=boxes;if((!forced&&!detecting())||f==null||at<f.at||at-f.at>1500)return;Canvas canvas=new Canvas(image);Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);paint.setStrokeWidth(2.5f);paint.setTextSize(18);
+    for(PersonDetector.Box b:f.items){float x=b.left*image.getWidth(),y=b.top*image.getHeight(),right=b.right*image.getWidth(),bottom=b.bottom*image.getHeight();if(right<=x||bottom<=y)continue;paint.setColor(Color.rgb(57,118,203));paint.setStyle(Paint.Style.STROKE);canvas.drawRect(x,y,right,bottom,paint);String text=(b.classId==0?"人":b.label)+" "+Math.round(b.score*100)+"%";float width=Math.min(image.getWidth(),paint.measureText(text)+12),left=Math.min(x,image.getWidth()-width),top=y>27?y-27:Math.min(image.getHeight()-27,y);paint.setStyle(Paint.Style.FILL);if(labels)canvas.drawRect(left,top,left+width,top+27,paint);paint.setColor(Color.WHITE);if(labels)canvas.drawText(text,left+6,top+20,paint);}
   }
+  void drawLabels(Bitmap image,long at,int turn,boolean mirror){DetectionFrame f=boxes;if(f==null||at<f.at||at-f.at>1500)return;for(PersonDetector.Box b:f.items)OverlayText.label(image,ImageTransform.bounds(b.left,b.top,b.right,b.bottom,turn,mirror),(b.classId==0?"人":b.label)+" "+Math.round(b.score*100)+"%",Color.rgb(57,118,203));}
   boolean previewing(){return active&&SystemClock.elapsedRealtime()<previewUntil;}
   synchronized void resume(){active=true;}
   synchronized void suspendObservation(){timeline.pause();lastStatistic=0;persist();}
@@ -46,11 +54,11 @@ final class SeatMonitor {
   synchronized JSONObject annotation(long wall,long mono){try{
     long age=latestAt==0?Long.MAX_VALUE:Math.max(0,mono-latestAt);int state=active&&enabled?timeline.current(mono):-1;
     java.text.SimpleDateFormat iso=new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX",Locale.US);
-    return new JSONObject().put("schemaVersion",2).put("capturedAt",wall).put("capturedAtIso",iso.format(new java.util.Date(wall))).put("captureUptime",mono).put("timezone",TimeZone.getDefault().getID()).put("seatState",state==1?"occupied":state==0?"empty":"unknown").put("annotationSource","model_estimate").put("manualGroundTruth",false).put("observedAt",lastWall).put("observationAgeMs",latestAt==0?JSONObject.NULL:age).put("personScore",age<=60000?personScore:JSONObject.NULL).put("calibrated",learner.ready()).put("roi",array(roi)).put("model","EfficientDet-Lite0");
+    return new JSONObject().put("schemaVersion",2).put("capturedAt",wall).put("capturedAtIso",iso.format(new java.util.Date(wall))).put("captureUptime",mono).put("timezone",TimeZone.getDefault().getID()).put("seatState",state==1?"occupied":state==0?"empty":"unknown").put("annotationSource","model_estimate").put("manualGroundTruth",false).put("observedAt",lastWall).put("observationAgeMs",latestAt==0?JSONObject.NULL:age).put("personScore",age<=freshness()?personScore:JSONObject.NULL).put("faceIdentity",false).put("calibrated",learner.ready()).put("roi",array(roi)).put("model","EfficientDet-Lite0");
   }catch(JSONException e){return new JSONObject();}}
   synchronized float[] region(){return roi.clone();}
   String frame(){return preview;}
-  synchronized boolean reserve(long now){if(!active||busy||(!enabled&&!previewing()&&!detecting())||now-lastInference<(detecting()?500:previewing()?2000:18000))return false;busy=true;lastInference=now;return true;}
+  synchronized boolean reserve(long now){if(!active||busy||(!enabled&&!previewing()&&!detecting()&&!recordingBoxes)||now-lastInference<((detecting()||recordingBoxes)?500:previewing()?2000:5000))return false;busy=true;lastInference=now;return true;}
   void cancelFrame(){busy=false;}
   void observe(Bitmap raw,String sourceId,long capturedAt){final int generation;final float[] region;synchronized(this){generation=version;region=roi.clone();}
     worker.post(()->{Bitmap upright=raw;try{
@@ -63,7 +71,7 @@ final class SeatMonitor {
       synchronized(this){if(!active||generation!=version||!sourceId.equals(cameraId))return;
         preview=jpeg;latest=features;latestAt=now;usable=features!=null;personScore=score;inferenceMs=detector.inferenceMs;lastWall=wall;boxes=new DetectionFrame(capturedAt,detector.detections);
         int guess=features==null?-1:learner.predict(features,score);
-        if(enabled&&(lastStatistic==0||now-lastStatistic>=18000)){lastStatistic=now;timeline.sample(guess,now,wall);if(timeline.current(now)==guess&&guess>=0&&learner.adapt(guess,features,score))Log.d("BloubSeat","ADAPT state="+guess);persist();}
+        if(enabled&&(lastStatistic==0||now-lastStatistic>=10000)){lastStatistic=now;timeline.sample(guess,now,wall);if(timeline.current(now)==guess&&guess>=0&&learner.adapt(guess,features,score))Log.d("BloubSeat","ADAPT state="+guess);persist();}
         if(features==null)message="画面偏暗或被遮挡，暂不统计";
         else message="正在观察";
         Log.i("BloubSeat","INFERENCE person="+score+" guess="+guess+" state="+timeline.current(now)+" ms="+inferenceMs);
@@ -79,23 +87,25 @@ final class SeatMonitor {
     double variance=0;for(float l:luminance)variance+=(l-mean)*(l-mean)/144;if(mean<12||mean>245||variance<16)return null;
     float[] f=new float[432];for(int i=0;i<144;i++){int p=pixels[i],red=(p>>16)&255,green=(p>>8)&255,blue=p&255;f[i*3]=(float)((luminance[i]-mean)/128);f[i*3+1]=(red-green)/255f;f[i*3+2]=(blue-green)/255f;}return f;
   }
-  synchronized String snapshot(int days){try{
-    long now=System.currentTimeMillis(),mono=SystemClock.elapsedRealtime();if(mono-lastRetentionSweep>=3600000||lastRetentionSweep==0){persist();lastRetentionSweep=mono;}Calendar today=Calendar.getInstance();today.setTimeInMillis(now);today.set(Calendar.HOUR_OF_DAY,0);today.set(Calendar.MINUTE,0);today.set(Calendar.SECOND,0);today.set(Calendar.MILLISECOND,0);
+  synchronized String snapshot(int days){return snapshot(days,System.currentTimeMillis(),0,Long.MAX_VALUE);}
+  synchronized String range(long from,long to){Calendar a=Calendar.getInstance();a.setTimeInMillis(from);a.set(Calendar.HOUR_OF_DAY,0);a.set(Calendar.MINUTE,0);a.set(Calendar.SECOND,0);a.set(Calendar.MILLISECOND,0);int days=0;while(a.getTimeInMillis()<to&&days<365){days++;a.add(Calendar.DATE,1);}return snapshot(days,to-1,from,to);}
+  private synchronized String snapshot(int days,long anchor,long from,long to){try{
+    long now=System.currentTimeMillis(),mono=SystemClock.elapsedRealtime();if(mono-lastRetentionSweep>=3600000||lastRetentionSweep==0){persist();lastRetentionSweep=mono;}Calendar today=Calendar.getInstance();today.setTimeInMillis(anchor);today.set(Calendar.HOUR_OF_DAY,0);today.set(Calendar.MINUTE,0);today.set(Calendar.SECOND,0);today.set(Calendar.MILLISECOND,0);
     int state=active&&enabled?timeline.current(mono):-1;
-    String reason=!enabled?"disabled":!active?"background":latestAt==0?"initializing":mono-latestAt>60000?"stale":!usable?"invalid_frame":state<0?"confirming":"observed";
+    String reason=!enabled?"disabled":!active?"background":latestAt==0?"initializing":mono-latestAt>freshness()?"stale":!usable?"invalid_frame":state<0?"confirming":"observed";
     String status=reason.equals("disabled")?"未开启":reason.equals("background")?"后台暂停":reason.equals("initializing")?"等待相机画面":reason.equals("stale")?"暂未观察":reason.equals("invalid_frame")?"画面不可用":state==1?"座位有人":state==0?"座位无人":"正在确认";
 
     JSONArray daily=new JSONArray();SimpleDateFormat format=new SimpleDateFormat("yyyy-MM-dd",Locale.US);
-    for(int j=Math.max(1,Math.min(90,days))-1;j>=0;j--){Calendar begin=(Calendar)today.clone();begin.add(Calendar.DATE,-j);Calendar end=(Calendar)begin.clone();end.add(Calendar.DATE,1);long a=begin.getTimeInMillis(),b=end.getTimeInMillis();long[] t=timeline.totals(a,b);JSONArray intervals=new JSONArray();long first=0,last=0;
+    for(int j=Math.max(1,Math.min(365,days))-1;j>=0;j--){Calendar begin=(Calendar)today.clone();begin.add(Calendar.DATE,-j);Calendar end=(Calendar)begin.clone();end.add(Calendar.DATE,1);long dayStart=begin.getTimeInMillis(),dayEnd=end.getTimeInMillis(),a=Math.max(dayStart,from),b=Math.min(dayEnd,to);long[] t=timeline.totals(a,b);JSONArray intervals=new JSONArray();long first=0,last=0;
       for(PresenceTimeline.Segment seg:timeline.segments){long start=Math.max(a,seg.start),finish=Math.min(b,seg.end);if(finish<=start)continue;if(seg.state==1){if(first==0)first=start;last=finish;}intervals.put(new JSONObject().put("start",start).put("end",finish).put("state",seg.state==1?"occupied":seg.state==0?"empty":"unknown"));}
-      daily.put(new JSONObject().put("date",format.format(begin.getTime())).put("start",a).put("end",b).put("occupiedMs",t[2]).put("emptyMs",t[1]).put("uncertainMs",t[0]).put("observedMs",t[0]+t[1]+t[2]).put("firstOccupiedAt",first).put("lastOccupiedAt",last).put("intervals",intervals));
+      daily.put(new JSONObject().put("date",format.format(begin.getTime())).put("start",dayStart).put("end",dayEnd).put("occupiedMs",t[2]).put("emptyMs",t[1]).put("uncertainMs",t[0]).put("observedMs",t[0]+t[1]+t[2]).put("firstOccupiedAt",first).put("lastOccupiedAt",last).put("intervals",intervals));
     }
-    return new JSONObject().put("detectionEnabled",detecting()).put("enabled",enabled).put("active",active).put("state",state==1?"occupied":state==0?"empty":"unknown").put("status",status).put("stateReason",reason).put("requiresCalibration",false).put("ready",learner.ready()).put("emptyConfirmed",learner.emptyLabels>0).put("occupiedConfirmed",learner.occupiedLabels>0).put("message",message).put("cameraId",cameraId).put("roi",array(roi)).put("lastObservedAt",lastWall).put("personScore",personScore).put("inferenceMs",inferenceMs).put("model",modelStatus).put("adaptations",learner.adaptations).put("retentionDays",90).put("sampleIntervalSeconds",20).put("timezone",TimeZone.getDefault().getID()).put("deviceTime",now).put("days",daily).toString();
+    return new JSONObject().put("detectionEnabled",detecting()).put("enabled",enabled).put("active",active).put("state",state==1?"occupied":state==0?"empty":"unknown").put("status",status).put("stateReason",reason).put("requiresCalibration",false).put("ready",learner.ready()).put("emptyConfirmed",learner.emptyLabels>0).put("occupiedConfirmed",learner.occupiedLabels>0).put("message",message).put("cameraId",cameraId).put("roi",array(roi)).put("lastObservedAt",lastWall).put("personScore",personScore).put("inferenceMs",inferenceMs).put("model",modelStatus).put("adaptations",learner.adaptations).put("retentionDays",retentionDays()).put("sampleIntervalSeconds",10).put("observationIntervalSeconds",new DeviceSettings(context).observationInterval()/1000).put("timezone",TimeZone.getDefault().getID()).put("deviceTime",now).put("todayDate",format.format(new Date(now))).put("rangeStart",from).put("rangeEndExclusive",to).put("days",daily).toString();
   }catch(JSONException e){return "{}";}}
   private JSONArray array(float[] f)throws JSONException{JSONArray a=new JSONArray();if(f!=null)for(float v:f)a.put(v);return a;}
   private float[] vector(JSONObject d,String name,int length)throws JSONException{JSONArray a=d.optJSONArray(name);if(a==null||a.length()!=length)return null;float[] f=new float[length];for(int i=0;i<length;i++){f[i]=(float)a.getDouble(i);if(!Float.isFinite(f[i])||Math.abs(f[i])>2)return null;}return f;}
   private synchronized void persist(){try{
-    timeline.prune(System.currentTimeMillis()-90L*86400000);JSONArray records=new JSONArray();for(PresenceTimeline.Segment s:timeline.segments)records.put(new JSONArray().put(s.start).put(s.end).put(s.state));
+    timeline.prune(System.currentTimeMillis()-retentionDays()*86400000L);JSONArray records=new JSONArray();for(PresenceTimeline.Segment s:timeline.segments)records.put(new JSONArray().put(s.start).put(s.end).put(s.state));
     JSONObject data=new JSONObject().put("roi",array(roi)).put("emptyAnchor",array(learner.emptyAnchor)).put("occupiedAnchor",array(learner.occupiedAnchor)).put("emptyMean",array(learner.emptyMean)).put("occupiedMean",array(learner.occupiedMean)).put("emptyLabels",learner.emptyLabels).put("occupiedLabels",learner.occupiedLabels).put("adaptations",learner.adaptations).put("cameraId",cameraId).put("segments",records);
     prefs().edit().putString("data",data.toString()).apply();
   }catch(JSONException ignored){}}
@@ -104,7 +114,7 @@ final class SeatMonitor {
     if(cameraId.equals(d.optString("cameraId"))){learner.emptyAnchor=vector(d,"emptyAnchor",432);learner.occupiedAnchor=vector(d,"occupiedAnchor",432);learner.emptyMean=vector(d,"emptyMean",432);learner.occupiedMean=vector(d,"occupiedMean",432);learner.emptyLabels=Math.max(0,d.optInt("emptyLabels"));learner.occupiedLabels=Math.max(0,d.optInt("occupiedLabels"));learner.adaptations=Math.max(0,d.optInt("adaptations"));
       if(SeatLearner.distance(learner.emptyAnchor,learner.emptyMean)>.08&&learner.emptyAnchor!=null)learner.emptyMean=learner.emptyAnchor.clone();if(SeatLearner.distance(learner.occupiedAnchor,learner.occupiedMean)>.08&&learner.occupiedAnchor!=null)learner.occupiedMean=learner.occupiedAnchor.clone();}
     JSONArray records=d.optJSONArray("segments");if(records!=null)for(int i=Math.max(0,records.length()-10000);i<records.length();i++){JSONArray s=records.getJSONArray(i);long a=s.getLong(0),b=s.getLong(1);int kind=s.getInt(2);if(a>0&&b>a&&kind>=-1&&kind<=1)timeline.add(a,b,kind);}
-    timeline.prune(System.currentTimeMillis()-90L*86400000);
+    timeline.prune(System.currentTimeMillis()-retentionDays()*86400000L);
   }catch(Exception e){Log.w("BloubSeat","Stored calibration",e);learner.reset();timeline.segments.clear();}}
   void destroy(){pause();worker.post(()->{if(detector!=null)detector.close();thread.quitSafely();});}
 }

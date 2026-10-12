@@ -38,5 +38,70 @@
     "path": "android/toolchain/platform-27_r03.zip",
     "url": "https://dl.google.com/android/repository/platform-27_r03.zip",
     "sha": "020c4c090bc82ce87ebaae5d1a922e21b39a1d03c78ffa43f0c3e42fc7d28169"
+  },
+  {
+    "path": "android/assets/face-landmarker.task",
+    "url": "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+    "sha": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
+  },
+  {
+    "path": "android/assets/hand-landmarker.task",
+    "url": "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+    "sha": "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1"
+  },
+  {
+    "path": "android/assets/holistic-landmarker.task",
+    "url": "https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/1/holistic_landmarker.task",
+    "sha": "e2dab61191e2dcd0a15f943d8e3ed1dce13c82dfa597b9dd39f562975a50c3f8"
+  },
+  {
+    "path": "android/toolchain/guava-33.4.8-android.jar",
+    "url": "https://repo.maven.apache.org/maven2/com/google/guava/guava/33.4.8-android/guava-33.4.8-android.jar",
+    "sha": "a1f8a4bafe5a77232d333356843e194599b30837574a7f4be1063daaaaab102c"
+  },
+  {
+    "path": "android/toolchain/failureaccess-1.0.3.jar",
+    "url": "https://repo.maven.apache.org/maven2/com/google/guava/failureaccess/1.0.3/failureaccess-1.0.3.jar",
+    "sha": "cbfc3906b19b8f55dd7cfd6dfe0aa4532e834250d7f080bd8d211a3e246b59cb"
+  },
+  {
+    "path": "android/toolchain/flogger-0.6.jar",
+    "url": "https://repo.maven.apache.org/maven2/com/google/flogger/flogger/0.6/flogger-0.6.jar",
+    "sha": "3145669db60c7b1d63b4e1f7137ea1a5de6ea91c516a68e8cfdd25794d81b7c4"
+  },
+  {
+    "path": "android/toolchain/flogger-system-backend-0.6.jar",
+    "url": "https://repo.maven.apache.org/maven2/com/google/flogger/flogger-system-backend/0.6/flogger-system-backend-0.6.jar",
+    "sha": "af7f9f049c79f67941e1e47637b20634594788398aa0aabcddbc7af0af3df5b1"
+  },
+  {
+    "path": "android/toolchain/annotation-1.1.0.jar",
+    "url": "https://dl.google.com/dl/android/maven2/androidx/annotation/annotation/1.1.0/annotation-1.1.0.jar",
+    "sha": "d38d63edb30f1467818d50aaf05f8a692dea8b31392a049bfa991b159ad5b692"
+  },
+  {
+    "path": "android/assets/MEDIAPIPE-LICENSE.txt",
+    "url": "https://raw.githubusercontent.com/google-ai-edge/mediapipe/v0.10.26/LICENSE",
+    "sha": "8707eef0533987efc5b155d64761eeb6e20793f50b9bd1a68dad1cf4719d0ed8"
+  },
+  {
+    "path": "android/toolchain/tasks-core-0.10.26.aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/mediapipe/tasks-core/0.10.26/tasks-core-0.10.26.aar",
+    "sha": "f4bcadaab6ae07e2ac2b4710da9f0b193603990f06832a8aefd81215b791981b"
+  },
+  {
+    "path": "android/toolchain/tasks-vision-0.10.26.aar",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/mediapipe/tasks-vision/0.10.26/tasks-vision-0.10.26.aar",
+    "sha": "08057f9fcb10d4496f90984609cfd20549e711b78c745c637cb6b94d452a468c"
+  },
+  {
+    "path": "android/toolchain/protobuf-java-4.26.1.jar",
+    "url": "https://repo.maven.apache.org/maven2/com/google/protobuf/protobuf-java/4.26.1/protobuf-java-4.26.1.jar",
+    "sha": "091933e5870af810748326f7ace4a673aca721253177542842f044b546f14282"
+  },
+  {
+    "path": "android/assets/PROTOBUF-LICENSE.txt",
+    "url": "https://raw.githubusercontent.com/protocolbuffers/protobuf/v26.1/LICENSE",
+    "sha": "6e5e117324afd944dcf67f36cf329843bc1a92229a8cd9bb573d7a83130fea7d"
   }
 ]

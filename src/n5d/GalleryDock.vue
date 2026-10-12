@@ -5,20 +5,22 @@ interface Photo {id:string;capturedAt:number;faces:number;motion:number;url:stri
 interface Lan {enabled:boolean;running:boolean;url:string;key:string;error:string}
 const native=!!window.N5D
 const photos=ref<Photo[]>([]),selected=ref<Photo|null>(null),photoZoom=ref(1),mode=ref<'photos'|'lan'>('photos')
-const monitorEnabled=ref(false)
+const monitorEnabled=ref(false),editingCode=ref(false),customCode=ref(''),codeMessage=ref('')
 const enabled=ref(true),total=ref(0),next=ref(0),cursor=ref(0),history=ref<number[]>([]),error=ref('')
 const lan=ref<Lan>({enabled:false,running:false,url:'',key:'',error:''})
 const date=(t:number)=>new Date(t).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
 function refresh(){
   try{const data=JSON.parse(window.N5D?.galleryList(cursor.value)??'{"items":[],"total":0,"enabled":false}');photos.value=data.items??[];enabled.value=data.enabled;total.value=data.total;next.value=data.nextBefore??0;error.value='';if(native){lan.value=JSON.parse(window.N5D!.galleryServerInfo());monitorEnabled.value=JSON.parse(window.N5D!.monitorInfo()).enabled;}}catch{error.value='图库暂时无法读取'}
 }
-function toggle(){enabled.value=!enabled.value;window.N5D?.galleryEnabled(enabled.value)}
+function toggle(){if(!enabled.value&&monitorEnabled.value&&!confirm('开启照片保存将关闭监控，继续？'))return;window.N5D?.galleryEnabled(!enabled.value);setTimeout(refresh,300)}
 function open(photo:Photo){photoZoom.value=1;selected.value=photo}
 function remove(){if(selected.value){window.N5D?.galleryDelete(selected.value.id);selected.value=null;refresh()}}
 function clear(){if(confirm('删除图库中的全部观察照片？')){window.N5D?.galleryClear();cursor.value=0;history.value=[];refresh()}}
 function page(forward:boolean){if(forward){history.value.push(cursor.value);cursor.value=next.value}else cursor.value=history.value.pop()??0;refresh()}
 function copyAddress(){window.N5D?.copyGalleryAddress()}
-function toggleMonitor(){window.N5D?.monitorEnabled(!monitorEnabled.value);setTimeout(refresh,300)}
+function setCode(value:string){try{if(value&&!/^[0-9]{6}$/.test(value)){codeMessage.value='输入六位数字';return;}const result=JSON.parse(window.N5D!.galleryAccessCode(value));if(result.error){codeMessage.value=result.error;return;}lan.value=result;editingCode.value=false;codeMessage.value='访问码已更新';}catch{codeMessage.value='访问码更新失败'}}
+function editCode(){customCode.value=lan.value.key;editingCode.value=true;codeMessage.value=''}
+function toggleMonitor(){if(!monitorEnabled.value&&enabled.value&&!confirm('开启监控将暂停照片保存，继续？'))return;window.N5D?.monitorEnabled(!monitorEnabled.value);setTimeout(refresh,300)}
 function toggleLan(){window.N5D?.galleryServerEnabled(!lan.value.enabled);setTimeout(refresh,300)}
 function key(e:KeyboardEvent){if(selected.value&&e.key==='Escape'){selected.value=null;e.stopImmediatePropagation();e.preventDefault()}}
 let timer=0
@@ -38,7 +40,8 @@ onBeforeUnmount(()=>{clearInterval(timer);window.removeEventListener('keydown',k
     <section v-else class="lan-dock">
       <button class="lan-switch" :disabled="!native" :aria-pressed="lan.enabled" @click="toggleLan"><div><strong>局域网图库</strong><small>{{ lan.running?'已启动':lan.error||'已关闭' }}</small></div><i class="switch" :class="{on:lan.enabled}"/></button>
       <div class="lan-address"><label>电脑网址<input readonly :value="lan.url?.split('?')[0]||'连接局域网后显示'" aria-label="局域网图库网址"/></label><div class="lan-code">六位访问码<b>{{ lan.key||'------' }}</b></div></div>
-      <button class="link" :disabled="!lan.url" @click="copyAddress">复制访问链接 ↗</button>
+      <div class="lan-actions"><button class="link" :disabled="!lan.url" @click="copyAddress">复制访问链接 ↗</button><button :disabled="!native" @click="setCode('')">刷新访问码</button><button :disabled="!native" @click="editCode">自定义</button><span role="status">{{ codeMessage }}</span></div>
+      <form v-if="editingCode" class="lan-code-editor" @submit.prevent="setCode(customCode)"><input v-model="customCode" aria-label="自定义六位访问码" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required/><button>保存</button><button type="button" @click="editingCode=false">取消</button></form>
       <div class="lan-api"><strong>AI 接口</strong><code>GET /api/photos</code><code>GET /api/camera</code></div>
 
     </section>
