@@ -12,7 +12,7 @@ import java.util.zip.*;
 /** Foreground LAN gallery and user-controlled camera. Protected routes require a six-digit code. */
 final class GalleryServer {
   static final int PORT=8768;
-  interface CameraControl {String status();boolean command(String action);SensorHub.StreamFrame frame();void heartbeat();String presence(int days);String presence(long from,long to);String detections();String landmarks();String settings();String updateSettings(JSONObject d)throws Exception;String monitor();void monitorConfig(JSONObject d)throws Exception;void monitorRetry();String monitorTest(JSONObject draft)throws Exception;InputStream video(String id)throws IOException;boolean videoDelete(String id);String seatControl(String action,JSONObject data)throws Exception;}
+  interface CameraControl {String status();void monitorPreview(boolean enabled,JSONObject options)throws Exception;SensorHub.StreamFrame monitorFrame();void monitorHeartbeat();boolean command(String action);SensorHub.StreamFrame frame();void heartbeat();String presence(int days);String presence(long from,long to);String detections();String landmarks();String settings();String updateSettings(JSONObject d)throws Exception;String monitor();void monitorConfig(JSONObject d)throws Exception;void monitorRetry();String monitorTest(JSONObject draft)throws Exception;InputStream video(String id)throws IOException;boolean videoDelete(String id);String seatControl(String action,JSONObject data)throws Exception;}
   private final CameraControl camera;private final Semaphore streams=new Semaphore(2);private final Map<String,long[]> failedCodes=new HashMap<>();
   private final Context context;private final Gallery gallery;private volatile String key;
   private volatile ServerSocket listener;private volatile String error="";
@@ -88,6 +88,7 @@ final class GalleryServer {
       JSONObject posted=null;try{int sizeBody=Integer.parseInt(hdr.getOrDefault("content-length","0"));if(sizeBody<0||sizeBody>16384||hdr.containsKey("transfer-encoding"))throw new IOException("请求过大或格式无效");if(sizeBody>0)posted=body(in,hdr);}catch(Exception bad){json(out,400,"{\"error\":\"invalid_body\"}");return;}
       if(path.equals("/api/access-code")){try{if(posted==null)throw new IllegalArgumentException("选择刷新或输入六位数字访问码");String value;if(posted.length()==1&&"refresh".equals(posted.optString("action")))value=null;else if(posted.length()==1&&posted.has("code")&&posted.get("code") instanceof String)value=posted.getString("code");else throw new IllegalArgumentException("访问码请求无效");json(out,200,changeCode(value,client));}catch(Exception bad){json(out,400,new JSONObject().put("error","invalid_access_code").put("message",bad.getMessage()).toString());}return;}
       if(path.equals("/api/settings")||path.equals("/api/monitor/config")||path.matches("/api/seat/(region|label|preview)")){try{JSONObject body=posted;if(body==null)throw new IOException("设置请求需要 JSON");if(path.equals("/api/settings"))json(out,200,camera.updateSettings(body));else if(path.equals("/api/monitor/config")){camera.monitorConfig(body);json(out,200,camera.monitor());}else json(out,200,camera.seatControl(path.substring(path.lastIndexOf('/')+1),body));}catch(Exception bad){json(out,400,new JSONObject().put("error","invalid_settings").put("message",bad.getMessage()==null?"设置无效":bad.getMessage()).toString());}return;}
+      if(path.equals("/api/monitor/preview")){try{if(posted==null||!(posted.get("enabled") instanceof Boolean)||posted.has("options")&&!(posted.get("options") instanceof JSONObject))throw new JSONException("预览请求无效");Iterator<String> fields=posted.keys();while(fields.hasNext()){String field=fields.next();if(!field.equals("enabled")&&!field.equals("options"))throw new JSONException("预览请求无效");}camera.monitorPreview(posted.getBoolean("enabled"),posted.optJSONObject("options"));json(out,200,"{\"accepted\":true}");}catch(Exception bad){json(out,bad instanceof JSONException?400:409,new JSONObject().put("error","preview_unavailable").put("message",bad.getMessage()==null?"预览暂不可用":bad.getMessage()).toString());}return;}
       if(path.equals("/api/monitor/test")){try{if(posted==null)throw new IOException("填写连接配置");json(out,200,camera.monitorTest(posted));}catch(Exception failure){String message=failure.getMessage();if(message==null||message.contains("upload")||message.contains("HTTP"))message="连接或上传验证失败，请检查地址、凭证和权限";json(out,400,new JSONObject().put("error","connection_test_failed").put("message",message).toString());}return;}
       if(path.equals("/api/monitor/retry")){camera.monitorRetry();json(out,200,"{\"accepted\":true}");return;}
       if(path.matches("/api/videos/[0-9]{13}-[a-f0-9]{8}\\.mp4/delete")){json(out,200,new JSONObject().put("deleted",camera.videoDelete(path.split("/")[3])).toString());return;}
@@ -100,6 +101,7 @@ final class GalleryServer {
       json(out,405,"{\"error\":\"unsupported_action\"}");return;
     }
     if(!"GET".equals(parts[0])){json(out,405,"{\"error\":\"method_not_allowed\"}");return;}
+    if(path.equals("/api/monitor/preview/stream")){stream(client,out,true);return;}
     if(path.equals("/api/access-code")){json(out,200,info(requestKey));return;}
     if(path.equals("/api/settings")){json(out,200,camera.settings());return;}
     if(path.equals("/api/monitor")){json(out,200,camera.monitor());return;}
@@ -110,11 +112,11 @@ final class GalleryServer {
     if("/api/detections".equals(path)){json(out,200,camera.detections());return;}
     if("/api/presence".equals(path)){if(q.containsKey("start")||q.containsKey("end")){try{long from=Long.parseLong(q.getOrDefault("start","-1")),to=Long.parseLong(q.getOrDefault("end","-1"));if(from<0||to<=from||to-from>365L*86400000)throw new IllegalArgumentException();json(out,200,camera.presence(from,to));}catch(Exception bad){json(out,400,"{\"error\":\"invalid_presence_range\"}");}return;}int days=7;try{days=Integer.parseInt(q.getOrDefault("days","7"));}catch(NumberFormatException bad){json(out,400,"{\"error\":\"invalid_days\"}");return;}if(days<1||days>365){json(out,400,"{\"error\":\"invalid_days\"}");return;}json(out,200,camera.presence(days));return;}
     if("/api/camera".equals(path)){json(out,200,camera.status());return;}
-    if("/api/camera/stream".equals(path)){stream(client,out);return;}
+    if("/api/camera/stream".equals(path)){stream(client,out,false);return;}
     if("/".equals(path)){bytes(out,200,"text/html; charset=utf-8",new String(asset("lan-gallery.html"),StandardCharsets.UTF_8).replace("__KEY__",requestKey).getBytes(StandardCharsets.UTF_8));return;}
     if("/gallery.css".equals(path)){bytes(out,200,"text/css; charset=utf-8",asset("lan-gallery.css"));return;}
     if("/gallery.js".equals(path)){bytes(out,200,"application/javascript; charset=utf-8",asset("lan-gallery.js"));return;}
-    if("/api/health".equals(path)){json(out,200,new JSONObject().put("version","0.9.2").put("retentionDays",gallery.retentionDays()).put("galleryReadOnly",false).put("settingsControl",true).put("monitoring",true).put("cameraControl",true).put("deviceTime",System.currentTimeMillis()).toString());return;}
+    if("/api/health".equals(path)){json(out,200,new JSONObject().put("version","0.9.3").put("retentionDays",gallery.retentionDays()).put("galleryReadOnly",false).put("settingsControl",true).put("monitoring",true).put("cameraControl",true).put("deviceTime",System.currentTimeMillis()).toString());return;}
     if("/api/photos".equals(path)){long before=0;try{before=Long.parseLong(q.getOrDefault("before","0"));}catch(NumberFormatException bad){json(out,400,"{\"error\":\"invalid_cursor\"}");return;}int page=0,limit=12;try{page=Integer.parseInt(q.getOrDefault("page","0"));limit=Integer.parseInt(q.getOrDefault("pageSize","12"));if(page<0||page>1000000||limit<1||limit>96)throw new IllegalArgumentException();}catch(Exception bad){json(out,400,"{\"error\":\"invalid_page\"}");return;}json(out,200,listing(Math.max(0,before),start,end,state,page,limit,requestKey).toString());return;}
     if("/api/archive.zip".equals(path)){archive(out,start,end,state);return;}
     String[] route=path.split("/");
@@ -133,13 +135,13 @@ final class GalleryServer {
     if(state==null||now-state[0]>60000){if(failedCodes.size()>64)failedCodes.clear();state=new long[]{now,0};failedCodes.put(address,state);}
     return ++state[1]>8;
   }
-  private void stream(Socket client,OutputStream out)throws IOException,JSONException{
+  private void stream(Socket client,OutputStream out,boolean monitoring)throws IOException,JSONException{
     if(!streams.tryAcquire()){json(out,409,"{\"error\":\"stream_busy\"}");return;}
     try{
-      JSONObject state=new JSONObject(camera.status());if(!state.optBoolean("live")){json(out,409,"{\"error\":\"start_stream_first\"}");return;}
+      JSONObject state=new JSONObject(camera.status());if(!state.optBoolean(monitoring?"monitorPreview":"live")){json(out,409,"{\"error\":\"start_stream_first\"}");return;}
       headers(out,200,"multipart/x-mixed-replace; boundary=bloubframe",-1,null);SensorHub.StreamFrame previous=null;long end=android.os.SystemClock.elapsedRealtime()+70000;
-      while(listener!=null&&!client.isClosed()&&android.os.SystemClock.elapsedRealtime()<end&&new JSONObject(camera.status()).optBoolean("live")){
-        camera.heartbeat();SensorHub.StreamFrame frame=camera.frame();
+      while(listener!=null&&!client.isClosed()&&android.os.SystemClock.elapsedRealtime()<end&&new JSONObject(camera.status()).optBoolean(monitoring?"monitorPreview":"live")){
+        if(monitoring)camera.monitorHeartbeat();else camera.heartbeat();SensorHub.StreamFrame frame=monitoring?camera.monitorFrame():camera.frame();
         if(frame!=null&&frame!=previous){out.write(("--bloubframe\r\nContent-Type: image/jpeg\r\nContent-Length: "+frame.jpeg.length+"\r\nX-Capture-Uptime: "+frame.capturedAt+"\r\nX-Frame-Sequence: "+frame.sequence+"\r\nX-Encode-Millis: "+frame.encodeMs+"\r\n\r\n").getBytes(StandardCharsets.US_ASCII));out.write(frame.jpeg);out.write("\r\n".getBytes(StandardCharsets.US_ASCII));out.flush();previous=frame;}
         try{Thread.sleep(10);}catch(InterruptedException stop){Thread.currentThread().interrupt();break;}
       }

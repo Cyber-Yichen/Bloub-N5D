@@ -26,6 +26,7 @@ final class SensorHub {
     private volatile boolean stopped;private final boolean micWanted,cameraWanted,tofWanted;
     private volatile int quietStart=1380,quietEnd=480;
     private volatile long lastAudioAt,lastDistanceAt,lastSoundAt,liveUntil;private volatile boolean liveRequested,pendingShot;private volatile StreamFrame liveFrame;private volatile String lastCaptureId="";private volatile boolean liveEncoding;private volatile long streamFrames;private volatile double streamFps,streamEncodeMs;private long firstEncodedAt,lastLiveSource;private volatile int liveVersion;private boolean cameraScheduled;private Size activePreview;
+    private volatile long monitorPreviewUntil;private volatile boolean monitorPreviewRequested;private volatile JSONObject monitorPreviewOptions;private volatile StreamFrame monitorPreviewFrame;private volatile int monitorPreviewVersion;private long monitorPreviewSequence;private final java.util.concurrent.atomic.AtomicBoolean audioRunning=new java.util.concurrent.atomic.AtomicBoolean();
     private volatile AudioRecord recorder;private volatile java.lang.Process tofHelper;
     private volatile float audioConfidence,level,music,speech,motion,faceX,faceY;private volatile int distance=-1,faces;
     private volatile String audioLabel="",micStatus="关闭",cameraStatus="关闭",tofStatus="关闭";
@@ -55,7 +56,7 @@ final class SensorHub {
         quietStart=activity.getSharedPreferences("sensors",0).getInt("quiet_start",1380);quietEnd=activity.getSharedPreferences("sensors",0).getInt("quiet_end",480);
         micWanted=mic;cameraWanted=cam;tofWanted=tof;
         cameraThread.start();cameraHandler=new Handler(cameraThread.getLooper());streamThread.start();streamHandler=new Handler(streamThread.getLooper());
-        if(mic||monitor.needsMicrophone()){if(activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)new Thread(this::audioLoop,"BloubAudio").start();else micStatus="需要麦克风权限";}
+        if(mic||monitor.needsMicrophone()){if(activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)ensureAudio();else micStatus="需要麦克风权限";}
         if(tof)new Thread(this::tofLoop,"BloubToF").start();
         if(cam){
             if(activity.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)cameraStatus="需要相机权限";
@@ -72,6 +73,8 @@ final class SensorHub {
         }
         ui.post(publish);
     }
+    private boolean needsAudio(){return micWanted||monitor.needsMicrophone()||(monitorPreview()&&monitorPreviewOptions!=null&&monitorPreviewOptions.optBoolean("overlayYamnet"));}
+    private void ensureAudio(){if(!stopped&&needsAudio()&&activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED&&audioRunning.compareAndSet(false,true))new Thread(this::audioLoop,"BloubAudio").start();}
     private void audioLoop(){
         micStatus="正在加载本地模型";
         AudioModel model=null;AudioRecord audio=null;java.util.concurrent.ExecutorService analysis=java.util.concurrent.Executors.newSingleThreadExecutor();java.util.concurrent.atomic.AtomicBoolean analyzing=new java.util.concurrent.atomic.AtomicBoolean();
@@ -84,7 +87,7 @@ final class SensorHub {
             recorder=audio;if(audio.getState()!=AudioRecord.STATE_INITIALIZED)throw new IOException("AudioRecord not initialized");
             short[] chunk=new short[1024],ring=new short[15600];int cursor=0,total=0,soundChunks=0;long classified=0,started=SystemClock.elapsedRealtime();float noiseFloor=.02f;
             audio.startRecording();if(model!=null)micStatus="YAMNet 本地音乐识别";else micStatus="仅声音能量";
-            while(!stopped){
+            while(!stopped&&needsAudio()){
                 int n=audio.read(chunk,0,chunk.length);if(n>0)monitor.pcm(chunk,n,System.nanoTime());if(n<=0)throw new IOException("Audio read "+n);
                 double square=0;for(int i=0;i<n;i++){float v=chunk[i]/32768f;square+=v*v;ring[cursor]=chunk[i];cursor=(cursor+1)%ring.length;}total=Math.min(ring.length,total+n);
                 level=(float)Math.min(1,Math.sqrt(square/n)*12);lastAudioAt=SystemClock.elapsedRealtime();
@@ -100,7 +103,7 @@ final class SensorHub {
                 }
             }
         }catch(Throwable e){if(!stopped){micStatus="麦克风不可用";Log.w("BloubSensors","Audio stopped",e);}}
-        finally{level=music=speech=0;recorder=null;if(audio!=null){try{audio.stop();}catch(Exception ignored){}audio.release();}if(model!=null){AudioModel completed=model;analysis.execute(completed::close);}analysis.shutdown();}
+        finally{level=music=speech=0;recorder=null;if(audio!=null){try{audio.stop();}catch(Exception ignored){}audio.release();}if(model!=null){AudioModel completed=model;analysis.execute(completed::close);}analysis.shutdown();audioRunning.set(false);if(!stopped)micStatus="关闭";}
     }
     private static final Pattern RANGE=Pattern.compile("status:(\\d+)\\s+distance:(\\d+)");
     private void parseDistance(String text){
@@ -183,9 +186,11 @@ final class SensorHub {
     }
     void quietHours(int start,int end){quietStart=start;quietEnd=end;cameraHandler.post(()->{if(!cameraOn)cameraStatus=automaticAllowed()?"等待短时观察":"夜间休息 · 声音唤醒";});}
     private boolean automaticAllowed(){if(settings.get().optBoolean("nightSaving"))return true;Calendar c=Calendar.getInstance();return CameraSchedule.allows(c.get(Calendar.HOUR_OF_DAY)*60+c.get(Calendar.MINUTE),quietStart,quietEnd,SystemClock.elapsedRealtime(),lastSoundAt,micWanted);}
+    private boolean monitorPreview(){return !stopped&&monitorPreviewRequested&&SystemClock.elapsedRealtime()<monitorPreviewUntil;}
+    private boolean watching(){return live()||monitorPreview();}
     private boolean live(){return !stopped&&liveRequested&&SystemClock.elapsedRealtime()<liveUntil;}
     String landmarkInfo(){return landmarks.info();}
-    String remoteStatus(){try{return new JSONObject().put("live",live()).put("cameraOn",cameraOn).put("cameraId",cameraId).put("status",cameraStatus).put("detectionEnabled",seat.detecting()).put("landmarks",new JSONObject(landmarks.info())).put("yamnetEnabled",showYamnet).put("audioLabel",audioLabel).put("audioConfidence",audioConfidence).put("faceIdentity",false).put("lastCaptureId",lastCaptureId).put("quietStart",quietStart).put("quietEnd",quietEnd).put("automaticAllowed",automaticAllowed()).put("uptimeMs",SystemClock.elapsedRealtime()).put("streamFrames",streamFrames).put("streamFps",streamFps).put("streamEncodeMs",streamEncodeMs).put("exposureMode",softwareExposure?"software_auto":"hardware_auto").put("exposureTimeNs",exposureTimeNs).put("iso",sensitivity).put("aeState",aeState).put("exposureCompensation",exposureCompensation).toString();}catch(JSONException e){return "{}";}}
+    String remoteStatus(){try{return new JSONObject().put("live",live()).put("monitorPreview",monitorPreview()).put("cameraOn",cameraOn).put("cameraId",cameraId).put("status",cameraStatus).put("detectionEnabled",seat.detecting()).put("landmarks",new JSONObject(landmarks.info())).put("yamnetEnabled",showYamnet).put("audioLabel",audioLabel).put("audioConfidence",audioConfidence).put("faceIdentity",false).put("lastCaptureId",lastCaptureId).put("quietStart",quietStart).put("quietEnd",quietEnd).put("automaticAllowed",automaticAllowed()).put("uptimeMs",SystemClock.elapsedRealtime()).put("streamFrames",streamFrames).put("streamFps",streamFps).put("streamEncodeMs",streamEncodeMs).put("exposureMode",softwareExposure?"software_auto":"hardware_auto").put("exposureTimeNs",exposureTimeNs).put("iso",sensitivity).put("aeState",aeState).put("exposureCompensation",exposureCompensation).toString();}catch(JSONException e){return "{}";}}
     boolean remote(String action){
         if(stopped||!cameraWanted||activity.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)return false;
         if("capture".equals(action)&&!gallery.enabled())return false;if("yamnet-on".equals(action)&&!micWanted&&!monitor.needsMicrophone())return false;
@@ -193,12 +198,18 @@ final class SensorHub {
             if(action.startsWith("landmark-")){boolean on=action.endsWith("-on");if(action.startsWith("landmark-face-"))showFace=on;else if(action.startsWith("landmark-hand-"))showHand=on;else if(action.startsWith("landmark-holistic-"))showHolistic=on;updateLandmarkLayers();return;}
             if(action.startsWith("yamnet-")){showYamnet=action.endsWith("-on");return;}
             if("detect-on".equals(action)||"detect-off".equals(action)){seat.detection("detect-on".equals(action)&&live());return;}
-            if("stop".equals(action)){seat.detection(false);showFace=showHand=showHolistic=showYamnet=false;updateLandmarkLayers();liveVersion++;liveRequested=false;liveFrame=null;if(!ownsRecorder)closeCamera();return;}
-            if("start".equals(action)){boolean already=live();liveRequested=true;liveUntil=SystemClock.elapsedRealtime()+90000;if(!already){liveVersion++;liveFrame=null;streamFrames=0;streamFps=0;firstEncodedAt=0;lastLiveSource=0;ui.post(liveTick);}}
+            if("stop".equals(action)){seat.detection(false);showFace=showHand=showHolistic=showYamnet=false;updateLandmarkLayers();liveVersion++;liveRequested=false;liveFrame=null;if(!ownsRecorder&&!monitorPreview())closeCamera();return;}
+            if("start".equals(action)){boolean watched=watching(),already=live();liveRequested=true;liveUntil=SystemClock.elapsedRealtime()+90000;if(!already){liveVersion++;liveFrame=null;streamFrames=0;streamFps=0;firstEncodedAt=0;lastLiveSource=0;if(!watched)ui.post(liveTick);}}
             if("capture".equals(action)){pendingShot=true;if(cameraOn&&activePreview!=null){Size size=activePreview;int generation=cameraGeneration;ui.post(()->savePreview(generation,size,true));return;}}
             lastCamera=0;openCamera();
         });return true;
     }
+    void monitorPreview(boolean enabled,JSONObject options)throws Exception{
+        final JSONObject parsed=enabled?MonitorPreviewSpec.parse(options):null;if(enabled){VideoEncoding.format(activity,cameraId,parsed);if(parsed.optBoolean("overlayYamnet")&&activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)throw new IOException("需要麦克风权限");}
+        cameraHandler.post(()->{if(stopped)return;boolean watched=watching();monitorPreviewVersion++;monitorPreviewOptions=parsed;monitorPreviewRequested=enabled;monitorPreviewUntil=enabled?SystemClock.elapsedRealtime()+90000:0;monitorPreviewFrame=null;updateLandmarkLayers();ensureAudio();if(enabled){if(!watched)ui.post(liveTick);lastCamera=0;openCamera();}else if(!live()&&!ownsRecorder)closeCamera();});
+    }
+    StreamFrame monitorPreviewFrame(){return monitorPreview()?monitorPreviewFrame:null;}
+    void monitorPreviewHeartbeat(){if(monitorPreview())monitorPreviewUntil=SystemClock.elapsedRealtime()+90000;}
     StreamFrame streamFrame(){return live()?liveFrame:null;}
     void streamHeartbeat(){if(liveRequested&&!stopped){liveUntil=SystemClock.elapsedRealtime()+90000;seat.heartbeat();}}
     private void scheduleCamera(){
@@ -207,24 +218,32 @@ final class SensorHub {
     }
     private void closeAfterObservation(int generation,Surface target){
         if(generation!=cameraGeneration){target.release();return;}
-        if(stopped||(!live()&&!seat.previewing()&&!monitor.recording())){liveRequested=false;liveFrame=null;closeCamera();target.release();}
+        if(stopped||(!watching()&&!seat.previewing()&&!monitor.recording())){liveRequested=false;liveFrame=null;closeCamera();target.release();}
         else cameraHandler.postDelayed(()->closeAfterObservation(generation,target),1000);
     }
-    private final Runnable liveTick=new Runnable(){public void run(){if(!live())return;long began=SystemClock.uptimeMillis();if(cameraOn)updateLiveFrame();ui.postAtTime(this,Math.max(began+20,SystemClock.uptimeMillis()+1));}};
+    private final Runnable liveTick=new Runnable(){public void run(){if(!watching())return;long began=SystemClock.uptimeMillis();if(cameraOn)updateLiveFrame();ui.postAtTime(this,Math.max(began+20,SystemClock.uptimeMillis()+1));}};
     private void updateLiveFrame(){
-        if(!live()||liveEncoding)return;SurfaceTexture source=texture.getSurfaceTexture();if(source==null)return;long timestamp=source.getTimestamp();if(timestamp>0&&timestamp==lastLiveSource)return;lastLiveSource=timestamp;liveEncoding=true;final int version=liveVersion;final long capturedAt=SystemClock.elapsedRealtime();
-        Bitmap frame;try{frame=texture.getBitmap("2".equals(cameraId)?480:640,"2".equals(cameraId)?640:480);}catch(RuntimeException e){liveEncoding=false;Log.w("BloubSensors","Stream frame read",e);return;}if(frame==null){liveEncoding=false;return;}
-        streamHandler.post(()->{Bitmap upright=frame;try{
-            if(!live()||version!=liveVersion)return;
-            if("2".equals(cameraId)){Matrix m=new Matrix();m.postRotate(90);upright=Bitmap.createBitmap(frame,0,0,frame.getWidth(),frame.getHeight(),m,true);}
-            if(seat.detecting())seat.draw(upright,capturedAt);landmarks.draw(upright,capturedAt,showFace,showHand,showHolistic);if(showYamnet)drawAudioLabel(upright,capturedAt);java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();upright.compress(Bitmap.CompressFormat.JPEG,80,out);long done=SystemClock.elapsedRealtime();if(!live()||version!=liveVersion)return;streamEncodeMs=done-capturedAt;if(firstEncodedAt==0)firstEncodedAt=done;long sequence=++streamFrames;streamFps=sequence<2?0:1000.0*(sequence-1)/Math.max(1,done-firstEncodedAt);liveFrame=new StreamFrame(out.toByteArray(),capturedAt,sequence,streamEncodeMs);
-        }finally{if(upright!=frame)upright.recycle();frame.recycle();liveEncoding=false;if(live())ui.post(this::updateLiveFrame);}});
+        if(!watching()||liveEncoding)return;SurfaceTexture source=texture.getSurfaceTexture();if(source==null)return;long timestamp=source.getTimestamp();if(timestamp>0&&timestamp==lastLiveSource)return;lastLiveSource=timestamp;liveEncoding=true;final int version=liveVersion,previewVersion=monitorPreviewVersion;final long capturedAt=SystemClock.elapsedRealtime();final boolean liveWanted=live(),previewWanted=monitorPreview();final JSONObject previewOptions=monitorPreviewOptions;
+        Bitmap frame;try{frame=texture.getBitmap("2".equals(cameraId)?480:640,"2".equals(cameraId)?640:480);}catch(RuntimeException e){liveEncoding=false;return;}if(frame==null){liveEncoding=false;return;}
+        streamHandler.post(()->{Bitmap upright=frame;try{if(!watching())return;if("2".equals(cameraId)){Matrix m=new Matrix();m.postRotate(90);upright=Bitmap.createBitmap(frame,0,0,frame.getWidth(),frame.getHeight(),m,true);}
+            if(previewWanted&&previewOptions!=null&&previewVersion==monitorPreviewVersion){Bitmap monitorImage=composeMonitorPreview(upright,capturedAt,previewOptions);try{java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();monitorImage.compress(Bitmap.CompressFormat.JPEG,80,bytes);if(monitorPreview()&&previewVersion==monitorPreviewVersion)monitorPreviewFrame=new StreamFrame(bytes.toByteArray(),capturedAt,++monitorPreviewSequence,SystemClock.elapsedRealtime()-capturedAt);}finally{monitorImage.recycle();}}
+            if(liveWanted&&live()&&version==liveVersion){if(seat.detecting())seat.draw(upright,capturedAt);landmarks.draw(upright,capturedAt,showFace,showHand,showHolistic);if(showYamnet)drawAudioLabel(upright,capturedAt);java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();upright.compress(Bitmap.CompressFormat.JPEG,80,out);long done=SystemClock.elapsedRealtime();if(!live()||version!=liveVersion)return;streamEncodeMs=done-capturedAt;if(firstEncodedAt==0)firstEncodedAt=done;long sequence=++streamFrames;streamFps=sequence<2?0:1000.0*(sequence-1)/Math.max(1,done-firstEncodedAt);liveFrame=new StreamFrame(out.toByteArray(),capturedAt,sequence,streamEncodeMs);}
+        }catch(Exception failure){Log.w("BloubMonitor","Preview frame",failure);}finally{if(upright!=frame)upright.recycle();frame.recycle();liveEncoding=false;if(watching())ui.post(this::updateLiveFrame);}});
     }
+    private Bitmap composeMonitorPreview(Bitmap source,long at,JSONObject options)throws Exception{
+        JSONObject format=VideoEncoding.format(activity,cameraId,options);float[] crop=ImageTransform.crop(source.getWidth()/(float)source.getHeight(),format.getInt("width")/(float)format.getInt("height"));
+        Bitmap full=source.copy(Bitmap.Config.ARGB_8888,true);drawMonitorGeometry(full,at,options);Bitmap image=Bitmap.createBitmap(full,Math.round(crop[0]*full.getWidth()),Math.round(crop[1]*full.getHeight()),Math.max(1,Math.round((crop[2]-crop[0])*full.getWidth())),Math.max(1,Math.round((crop[3]-crop[1])*full.getHeight())));if(image!=full)full.recycle();
+        int turn=options.optBoolean("rotationEnabled")?options.optInt("rotation"):0;boolean mirror=options.optBoolean("mirror");if(turn!=0||mirror){Matrix m=new Matrix();m.postRotate(turn);if(mirror)m.postScale(-1,1);Bitmap transformed=Bitmap.createBitmap(image,0,0,image.getWidth(),image.getHeight(),m,true);if(transformed!=image)image.recycle();image=transformed;}
+        drawMonitorHud(image,at,System.currentTimeMillis(),options,crop);return image;
+    }
+    private void drawMonitorGeometry(Bitmap image,long at,JSONObject options){if(options.optBoolean("overlayObjects"))seat.draw(image,at,true,false);landmarks.draw(image,at,options.optBoolean("overlayFaces"),options.optBoolean("overlayHands"),options.optBoolean("overlayHolistic"),false);}
+    private void drawMonitorHud(Bitmap image,long at,long wall,JSONObject options,float[] crop){int turn=options.optBoolean("rotationEnabled")?options.optInt("rotation"):0;boolean mirror=options.optBoolean("mirror");if(options.optBoolean("overlayObjects"))seat.drawLabels(image,at,turn,mirror,crop);landmarks.drawLabels(image,at,options.optBoolean("overlayFaces"),options.optBoolean("overlayHands"),options.optBoolean("overlayHolistic"),turn,mirror,crop);if(options.optBoolean("timestamp"))drawHud(image,new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss",Locale.US).format(new Date(wall)),0);if(options.optBoolean("overlayYamnet"))drawAudioLabel(image,at);}
+
     void monitorChanged(){cameraHandler.post(()->{closeCamera();lastCamera=0;openCamera();});}
     void seatWake(){cameraHandler.post(this::openCamera);}
     private void openCamera(){
         if(stopped||!cameraWanted||activity.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED||cameraOn||opening||camera!=null)return;
-        long now=SystemClock.elapsedRealtime();if(!live()&&!pendingShot&&!seat.previewing()&&!monitor.enabled()){if(!settings.scheduledObservation())return;if(!automaticAllowed()){cameraStatus="夜间休息 · 声音唤醒";return;}if(lastCamera>0&&now-lastCamera<settings.observationInterval())return;}
+        long now=SystemClock.elapsedRealtime();if(!watching()&&!pendingShot&&!seat.previewing()&&!monitor.enabled()){if(!settings.scheduledObservation())return;if(!automaticAllowed()){cameraStatus="夜间休息 · 声音唤醒";return;}if(lastCamera>0&&now-lastCamera<settings.observationInterval())return;}
         opening=true;final int generation=++cameraGeneration;cameraStatus="正在短时观察";lastCamera=SystemClock.elapsedRealtime();
         try{
             CameraManager manager=(CameraManager)activity.getSystemService(Context.CAMERA_SERVICE);
@@ -248,7 +267,13 @@ final class SensorHub {
             }catch(Exception e){Log.w("BloubSensors","Photo save failed",e);}finally{if(image!=null)image.close();}},cameraHandler);
             Log.i("BloubSensors","CAMERA_CONFIG id="+cameraId+" preview="+preview+" jpeg="+picture);
             activePreview=preview;final Surface target=new Surface(t);previewSurface=target;Surface video=null;
-            if(monitor.enabled()){Size[] videoSizes=map.getOutputSizes(android.media.MediaRecorder.class);if(videoSizes!=null&&videoSizes.length>0)try{Size videoSize=chooseSize(videoSizes,preview.getWidth()/(double)preview.getHeight(),1300000);video=monitor.prepare(videoSize,"2".equals(cameraId)?90:0,new VideoCompositor.Overlay(){public void geometry(Bitmap image,long mono){JSONObject options=monitor.recordingOptions();if(options.optBoolean("overlayObjects"))seat.draw(image,mono,true,false);landmarks.draw(image,mono,options.optBoolean("overlayFaces"),options.optBoolean("overlayHands"),options.optBoolean("overlayHolistic"),false);}public void hud(Bitmap image,long wall,long mono){JSONObject options=monitor.recordingOptions();int turn=options.optBoolean("rotationEnabled")?options.optInt("rotation"):0;boolean mirror=options.optBoolean("mirror");if(options.optBoolean("overlayObjects"))seat.drawLabels(image,mono,turn,mirror);landmarks.drawLabels(image,mono,options.optBoolean("overlayFaces"),options.optBoolean("overlayHands"),options.optBoolean("overlayHolistic"),turn,mirror);if(options.optBoolean("timestamp"))drawHud(image,new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss",Locale.US).format(new Date(wall)),0);if(options.optBoolean("overlayYamnet"))drawAudioLabel(image,mono);}});ownsRecorder=video!=null;}catch(Exception e){if(ownsRecorder){monitor.failed();ownsRecorder=false;}Log.w("BloubMonitor","Video preparation failed",e);}}
+            if(monitor.enabled()){Size[] videoSizes=map.getOutputSizes(android.media.MediaRecorder.class);if(videoSizes!=null&&videoSizes.length>0)try{Size videoSize=VideoEncoding.size(activity,cameraId,monitor.options());video=monitor.prepare(videoSize,"2".equals(cameraId)?90:0,new VideoCompositor.Overlay(){
+                final float sourceRatio="2".equals(cameraId)?preview.getHeight()/(float)preview.getWidth():preview.getWidth()/(float)preview.getHeight();
+                final float targetRatio="2".equals(cameraId)?videoSize.getHeight()/(float)videoSize.getWidth():videoSize.getWidth()/(float)videoSize.getHeight();
+                final float[] crop=ImageTransform.crop(sourceRatio,targetRatio);
+                public void geometry(Bitmap image,long mono){JSONObject options=monitor.recordingOptions();if(Math.abs(sourceRatio-targetRatio)<.001f){drawMonitorGeometry(image,mono,options);return;}Bitmap full=Bitmap.createBitmap(640,Math.round(640/sourceRatio),Bitmap.Config.ARGB_8888);try{drawMonitorGeometry(full,mono,options);Rect from=new Rect(Math.round(crop[0]*full.getWidth()),Math.round(crop[1]*full.getHeight()),Math.round(crop[2]*full.getWidth()),Math.round(crop[3]*full.getHeight()));new Canvas(image).drawBitmap(full,from,new Rect(0,0,image.getWidth(),image.getHeight()),new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG));}finally{full.recycle();}}
+                public void hud(Bitmap image,long wall,long mono){drawMonitorHud(image,mono,wall,monitor.recordingOptions(),crop);}
+            });ownsRecorder=video!=null;}catch(Exception e){if(ownsRecorder){monitor.failed();ownsRecorder=false;}Log.w("BloubMonitor","Video preparation failed",e);}}
             final Surface videoTarget=video;
             final java.util.List<Surface> targets=new ArrayList<>();targets.add(target);if(photos!=null)targets.add(photos.getSurface());if(videoTarget!=null)targets.add(videoTarget);
             manager.openCamera(cameraId,new CameraDevice.StateCallback(){
@@ -315,7 +340,7 @@ final class SensorHub {
         request.set(CaptureRequest.SENSOR_EXPOSURE_TIME,time);request.set(CaptureRequest.SENSOR_SENSITIVITY,iso);request.set(CaptureRequest.SENSOR_FRAME_DURATION,33350000L);
     }
     private final CameraCaptureSession.CaptureCallback exposureCallback=new CameraCaptureSession.CaptureCallback(){public void onCaptureCompleted(CameraCaptureSession s,CaptureRequest r,TotalCaptureResult result){Long time=result.get(CaptureResult.SENSOR_EXPOSURE_TIME);Integer iso=result.get(CaptureResult.SENSOR_SENSITIVITY),state=result.get(CaptureResult.CONTROL_AE_STATE),ev=result.get(CaptureResult.CONTROL_AE_EXPOSURE_COMPENSATION);if(time!=null)exposureTimeNs=time;if(iso!=null)sensitivity=iso;if(state!=null)aeState=state;if(ev!=null)exposureCompensation=ev;}};
-    private void updateLandmarkLayers(){JSONObject c=monitor.recordingOptions();boolean recording=monitor.enabled();landmarks.layers(showFace||(recording&&c.optBoolean("overlayFaces")),showHand||(recording&&c.optBoolean("overlayHands")),showHolistic||(recording&&c.optBoolean("overlayHolistic")));seat.recordingDemand(recording&&c.optBoolean("overlayObjects"));}
+    private void updateLandmarkLayers(){JSONObject c=monitor.recordingOptions();boolean recording=monitor.enabled();JSONObject preview=monitorPreview()&&monitorPreviewOptions!=null?monitorPreviewOptions:new JSONObject();landmarks.layers(showFace||(recording&&c.optBoolean("overlayFaces"))||preview.optBoolean("overlayFaces"),showHand||(recording&&c.optBoolean("overlayHands"))||preview.optBoolean("overlayHands"),showHolistic||(recording&&c.optBoolean("overlayHolistic"))||preview.optBoolean("overlayHolistic"));seat.recordingDemand((recording&&c.optBoolean("overlayObjects"))||preview.optBoolean("overlayObjects"));}
     private void drawAudioLabel(Bitmap image,long mono){String label=lastAudioAt>0&&mono-lastAudioAt<3000&&!audioLabel.isEmpty()?"YAMNet: "+audioLabel+" "+Math.round(audioConfidence*100)+"%":"YAMNet: 等待声音";drawHud(image,label,1);}
     private static void drawHud(Bitmap image,String text,int row){Canvas canvas=new Canvas(image);Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);float scale=image.getWidth()/640f,height=28*scale;paint.setTextSize(16*scale);paint.setTypeface(Typeface.MONOSPACE);float x=12*scale,y=12*scale+row*(height+6*scale),width=Math.min(image.getWidth()-x*2,paint.measureText(text)+16*scale);paint.setColor(Color.argb(175,12,18,25));canvas.drawRoundRect(new RectF(x,y,x+width,y+height),4*scale,4*scale,paint);paint.setColor(Color.WHITE);canvas.drawText(text,x+8*scale,y+20*scale,paint);}
     private void closeCamera(){
@@ -327,7 +352,7 @@ final class SensorHub {
         if(!stopped)cameraStatus=automaticAllowed()?"相机 "+cameraId+" · 等待观察":"夜间休息 · 声音唤醒";
     }
     void stop(){
-        stopped=true;landmarks.close();seat.recordingDemand(false);seat.suspendObservation();seat.detection(false);liveVersion++;liveRequested=false;liveFrame=null;pendingShot=false;ui.removeCallbacks(publish);
+        stopped=true;monitorPreviewRequested=false;monitorPreviewFrame=null;landmarks.close();seat.recordingDemand(false);seat.suspendObservation();seat.detection(false);liveVersion++;liveRequested=false;liveFrame=null;pendingShot=false;ui.removeCallbacks(publish);
         java.lang.Process p=tofHelper;if(p!=null){try{p.getOutputStream().close();}catch(Exception ignored){}p.destroy();}
         cameraHandler.removeCallbacksAndMessages(null);cameraHandler.post(()->{closeCamera();cameraThread.quitSafely();});streamHandler.post(()->streamThread.quitSafely());
         // Audio reads finish in ~64ms, then release on their own worker.

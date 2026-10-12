@@ -1,0 +1,5 @@
+package com.cyberyichen.bloub;
+import org.json.*;import java.util.*;
+final class MonitorPreviewSpec {
+ static JSONObject parse(JSONObject patch)throws JSONException{JSONObject d=new JSONObject("{\"timestamp\":true,\"mirror\":false,\"rotationEnabled\":false,\"rotation\":0,\"overlayObjects\":false,\"overlayFaces\":false,\"overlayHands\":false,\"overlayHolistic\":false,\"overlayYamnet\":false,\"videoCodec\":\"h264\",\"resolution\":\"auto\",\"frameRate\":30,\"bitrateKbps\":2000}");Iterator<String> keys=patch.keys();while(keys.hasNext()){String key=keys.next();if(!d.has(key))throw new JSONException("预览参数无效");Object v=patch.get(key),base=d.get(key);if(base instanceof Boolean&&!(v instanceof Boolean)||base instanceof Number&&!(v instanceof Number)||base instanceof String&&!(v instanceof String))throw new JSONException("预览参数格式无效");d.put(key,v);}double rotation=d.getDouble("rotation");if(rotation!=Math.floor(rotation)||rotation<0||rotation>270||rotation%90!=0)throw new JSONException("旋转角度无效");EncodingSpec.validate(d);return d;}
+}

@@ -1,6 +1,16 @@
-# Bloub 桌边 · 0.9.2 使用与构建
+# Bloub 桌边 · 0.9.3 使用与构建
 
 项目：[Cyber-Yichen/Bloub-N5D](https://github.com/Cyber-Yichen/Bloub-N5D)。上游基线 b4bb3c1b5f93c7b87a2e8d620f667c4093d97749，保留 MIT 许可。
+
+## 0.9.3 更新
+
+- 监控预览与常驻录像画面设置放在一起；镜像、旋转、时间戳和检测叠加可先预览再保存。
+- 按设备支持范围选择编码、分辨率、帧率和码率，显示每段及每小时文件大小估算。
+- “画面有变化时才保存”支持独立的变化前后时长，各可选择秒或分钟。
+- 上传模式切换为每段录完、每日定时或手动；各服务的凭证继续独立保存。
+- 修复拍摄间隔中有人、无人、未知的开关与数字排版。
+
+本版实测与限制见 [0.9.3 验证记录](docs/verification-0.9.3.md)。
 
 ## 0.9.2 更新
 
@@ -88,7 +98,7 @@ WSL 网络不可用时，可以在同一个 checkout 通过 Windows 下载，再
 powershell -ExecutionPolicy Bypass -File android/fetch-model.ps1
 ```
 
-每个依赖的来源、版本和 SHA256 固定在 android/dependencies.json 与 android/dependencies.sha256。构建前验证哈希；输出 android/dist/Bloub-N5D-0.9.2.apk 和 SHA256SUMS.txt。minSdk24、targetSdk27，打包 arm64-v8a TFLite 与 MediaPipe。
+每个依赖的来源、版本和 SHA256 固定在 android/dependencies.json 与 android/dependencies.sha256。构建前验证哈希；输出 android/dist/Bloub-N5D-0.9.3.apk 和 SHA256SUMS.txt。minSdk24、targetSdk27，打包 arm64-v8a TFLite 与 MediaPipe。
 
 开发签名密钥会在本机 android/toolchain/development.jks 自动生成，不提交。不同人的本地开发签名不同；发布包使用维护者的同一签名。产物、工具链、模型下载缓存、设备诊断报告均按 .gitignore 排除；模型与附带许可作为明确的运行资源保留。
 
